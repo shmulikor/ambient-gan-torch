@@ -14,9 +14,11 @@ from commons import hparams_def
 from commons import utils
 from commons.models.dcgan import DCGAN_MODEL
 from commons.models.wgan_gradient_penalty import WGAN_GP
-from commons.arch import Discriminator32, Discriminator64
-from commons.arch import Generator32, Generator64
+from commons.arch import Generator32, Discriminator32
+from commons.arch import Generator64, Discriminator64
+from commons.arch import Generator3D, Discriminator3D
 from mnist.gen import utils as mnist_utils
+from QSM.gen import utils as QSM_utils
 
 # from cifar10 import utils as cifar10_utils
 # from cifar10 import gan_def as cifar10_gan_def
@@ -39,37 +41,33 @@ def main(hparams):
     if hparams['train_mode'] != 'ambient':
         raise NotImplementedError
 
-    ###### Get network definitions ######
-    # image dimensions - we assume that the input images are squared
-    if hparams['image_dims'][-1] == 32:
+    clean_data = True
+    if hparams['dataset'] == 'mnist':
         generator = Generator32(hparams['c_dim'])
         discriminator = Discriminator32(hparams['c_dim'])
-    elif hparams['image_dims'][-1] == 64:
+        data_iterator = mnist_utils.RealValIterator(hparams)
+    elif hparams['dataset'] == 'celebA':
         generator = Generator64(hparams['c_dim'])
         discriminator = Discriminator64(hparams['c_dim'])
+        data_iterator = celebA_utils.RealValIterator(hparams)
+    elif hparams['dataset'] == 'QSM':
+        generator = Generator3D()
+        discriminator = Discriminator3D()
+        data_iterator = QSM_utils.RealValIterator(hparams)
+        clean_data = False
     else:
         raise NotImplementedError
 
-    # get data iterator
-    if hparams['dataset'] == 'mnist':
-        data_iterator = mnist_utils.RealValIterator(hparams)
-    elif hparams['dataset'] == 'celebA':
-        data_iterator = celebA_utils.RealValIterator(hparams)
-    # elif hparams.dataset == 'cifar10':
-    #     data_iterator = cifar10_utils.RealValIterator(hparams)
-    else:
-        raise NotImplementedError
+    data_iterator.next()
 
     # Define the connections according to model class and run
     if hparams['model_class'] == 'unconditional':
-        # if mdevice.output_type == 'vector':
-        #     discriminator = gan_def.discriminator_fc
 
         # define model
         if hparams['model_type'] == 'dcgan':
-            model = DCGAN_MODEL(generator, discriminator, data_iterator, hparams)
+            model = DCGAN_MODEL(generator, discriminator, data_iterator, hparams, clean_data)
         elif hparams['model_type'] == 'wgangp':
-            model = WGAN_GP(generator, discriminator, data_iterator, hparams)
+            model = WGAN_GP(generator, discriminator, data_iterator, hparams, clean_data)
         else:
             raise NotImplementedError
 

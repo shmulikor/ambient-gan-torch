@@ -8,12 +8,11 @@ It comes with the following license: https://github.com/carpedm20/DCGAN-tensorfl
 # pylint: disable = C0103, C0111, C0301, R0913, R0903, R0914, E1101
 
 import glob
-import scipy.misc
+
 import imageio
 import numpy as np
 import torch
 from skimage.transform import resize
-
 
 
 def imread(path):
@@ -84,7 +83,7 @@ class RealValIterator(object):
                             resize_width=self.output_width,
                             is_crop=self.is_crop) for batch_file in batch_files]
 
-        x_real = torch.FloatTensor(np.array(x_real)).permute(0, 3, 1, 2) # to get NCHW
+        x_real = torch.FloatTensor(np.array(x_real)).permute(0, 3, 1, 2)    # to get NCHW
 
         if self.model_class == 'unconditional':
             return x_real
