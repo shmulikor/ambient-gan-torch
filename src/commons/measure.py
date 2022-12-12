@@ -48,17 +48,12 @@ class MeasurementDevice(object):
         self.batch_dims = [hparams['batch_size']] + hparams['image_dims']
         self.output_type = None  # indicate whether image or vector
 
-    def get_theta_ph(self, hparams):
-        """Abstract Method"""
-        # Should return theta_ph
-        raise NotImplementedError
-
     def sample_theta(self, hparams):
         """Abstract Method"""
         # Should return theta_val
         raise NotImplementedError
 
-    def measure(self, hparams, x, theta_ph):
+    def measure(self, hparams, x, theta):
         """Abstract Method"""
         # Tensorflow implementation of measurement. Must be differentiable wrt x.
         # Should return x_measured
@@ -124,12 +119,17 @@ class DropMaskType1(DropDevice):
 
     def sample_theta(self, hparams):
         noise_shape = self.get_noise_shape()
-        mask = torch.rand(noise_shape)
+        # if hparams['dataset'] == 'QSM':
+        #     noise_shape[0] *= hparams['num_orientations']
+        repeat_axis = np.ones(len(noise_shape) - 1).astype(int)
+        repeat_axis[0] = noise_shape[1]
+        mask = torch.Tensor(np.stack([torch.rand(noise_shape[2:]).repeat(tuple(repeat_axis))
+                                      for _ in range(noise_shape[0])])) # sample the same mask for all channels
         p = hparams['drop_prob']
         mask = (mask >= p).to(torch.float32) #/ (1 - p)
-        theta = torch.ones(self.batch_dims)
-        theta = theta * mask
-        return theta
+        # theta = torch.ones(self.batch_dims)
+        # theta = theta * mask
+        return mask
 
 
 class DropIndependent(DropMaskType1):
@@ -274,7 +274,7 @@ class PadRotateProject(PadRotateProjectDevice):
 
 	
     def measure(self, hparams, x, theta): 
-	# TODO - replace with torch implementation
+        # TODO - replace with torch implementation
         x_padded = measure_utils.pad(hparams, x)
         x_measured_list = []
         for i in range(hparams['num_angles']):
@@ -294,12 +294,12 @@ class PadRotateProject(PadRotateProjectDevice):
 
 class PadRotateProjectWithTheta(PadRotateProjectDevice):
 
-    def measure(self, hparams, x, theta_ph):
-	# TODO - replace with torch implementation
+    def measure(self, hparams, x, theta):
+    # TODO - replace with torch implementation
         x_padded = measure_utils.pad(hparams, x)
         x_measured_list = []
         for i in range(hparams.num_angles):
-            angles = theta_ph[:, i]
+            angles = theta[:, i]
             x_rotated = measure_utils.rotate(x_padded, angles)
             x_projected = measure_utils.project(hparams, x_rotated)
             x_measured = measure_utils.concat(x_projected, angles)

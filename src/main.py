@@ -14,9 +14,9 @@ from commons import hparams_def
 from commons import utils
 from commons.models.dcgan import DCGAN_MODEL
 from commons.models.wgan_gradient_penalty import WGAN_GP
-from commons.arch import Generator32, Discriminator32
-from commons.arch import Generator64, Discriminator64
-from commons.arch import Generator3D, Discriminator3D
+from commons.arch import Generator32, Discriminator32_DCGAN, Discriminator32_WGANGP
+from commons.arch import Generator64, Discriminator64_DCGAN, Discriminator64_WGANGP
+from commons.arch import Generator64_3D, Discriminator64_3D_DCGAN, Discriminator64_3D_WGANGP
 from mnist.gen import utils as mnist_utils
 from QSM.gen import utils as QSM_utils
 
@@ -41,39 +41,34 @@ def main(hparams):
     if hparams['train_mode'] != 'ambient':
         raise NotImplementedError
 
-    clean_data = True
+    clean_data = True   # TODO - do I really need this variable?
     if hparams['dataset'] == 'mnist':
+        dataset = mnist_utils.MNISTdataset()
         generator = Generator32(hparams['c_dim'])
-        discriminator = Discriminator32(hparams['c_dim'])
-        data_iterator = mnist_utils.RealValIterator(hparams)
+        discriminator = Discriminator32_DCGAN(hparams['c_dim']) if hparams['model_type'] == 'dcgan' else Discriminator32_WGANGP(hparams['c_dim'])
     elif hparams['dataset'] == 'celebA':
-        generator = Generator64(hparams['c_dim'])
-        discriminator = Discriminator64(hparams['c_dim'])
-        data_iterator = celebA_utils.RealValIterator(hparams)
+        dataset = celebA_utils.CelebAdataset(hparams)
+        generator = Generator64()
+        discriminator = Discriminator64_DCGAN() if hparams['model_type'] == 'dcgan' else Discriminator64_WGANGP()
     elif hparams['dataset'] == 'QSM':
-        generator = Generator3D()
-        discriminator = Discriminator3D()
-        data_iterator = QSM_utils.RealValIterator(hparams)
+        # data_iterator = QSM_utils.PhaseDataIterator(hparams)
+        dataset = QSM_utils.CosmosDataIterator()
+        generator = Generator64_3D()
+        discriminator = Discriminator64_3D_DCGAN() if hparams['model_type'] == 'dcgan' else Discriminator64_3D_WGANGP()
         clean_data = False
     else:
         raise NotImplementedError
 
-    data_iterator.next()
-
-    # Define the connections according to model class and run
-    if hparams['model_class'] == 'unconditional':
-
-        # define model
-        if hparams['model_type'] == 'dcgan':
-            model = DCGAN_MODEL(generator, discriminator, data_iterator, hparams, clean_data)
-        elif hparams['model_type'] == 'wgangp':
-            model = WGAN_GP(generator, discriminator, data_iterator, hparams, clean_data)
-        else:
-            raise NotImplementedError
-
-        model.train()
+    # define model
+    if hparams['model_type'] == 'dcgan':
+        model = DCGAN_MODEL(generator, discriminator, dataset, hparams, clean_data)
+    elif hparams['model_type'] == 'wgangp':
+        model = WGAN_GP(generator, discriminator, dataset, hparams, clean_data)
     else:
         raise NotImplementedError
+
+    model.train()
+    # model.evaluate(n_images=5)
 
 
 if __name__ == '__main__':

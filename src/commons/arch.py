@@ -41,7 +41,7 @@ class Generator32(torch.nn.Module):
         return self.output(x)
 
 
-class Discriminator32(torch.nn.Module):
+class Discriminator32_WGANGP(torch.nn.Module):
     def __init__(self, channels):
         super().__init__()
         # Filters [256, 512, 1024]
@@ -69,22 +69,96 @@ class Discriminator32(torch.nn.Module):
 
         self.output = nn.Sequential(
             # The output of D is no longer a probability, we do not apply sigmoid at the output of D.
-            nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=1, padding=0))
+            nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=1, padding=0),
+            )
 
     def forward(self, x):
         x = self.main_module(x)
         return self.output(x)
 
-    def feature_extraction(self, x):
-        # Use discriminator for feature extraction then flatten to vector of 16384
+class Discriminator32_DCGAN(torch.nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        # Filters [256, 512, 1024]
+        # Input_dim = channels (Cx64x64)
+        # Output_dim = 1
+        self.main_module = nn.Sequential(
+            # Image (Cx32x32)
+            nn.Conv2d(in_channels=channels, out_channels=256, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            # State (256x16x16)
+            nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            # State (512x8x8)
+            nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(1024),
+            nn.LeakyReLU(0.2, inplace=True))
+            # outptut of main module --> State (1024x4x4)
+
+        self.output = nn.Sequential(
+            nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=1, padding=0),
+            # Output 1
+            nn.Sigmoid())
+
+    def forward(self, x):
         x = self.main_module(x)
-        return x.view(-1, 1024 * 4 * 4)
+        return self.output(x)
+
+
+# class Discriminator32(torch.nn.Module):
+#     def __init__(self, channels, sigmoid=True):
+#         super().__init__()
+#         # Filters [256, 512, 1024]
+#         # Input_dim = channels (Cx64x64)
+#         # Output_dim = 1
+#         self.sigmoid = sigmoid
+#         self.main_module = nn.Sequential(
+#             # Omitting batch normalization in critic because our new penalized training objective (WGAN with gradient penalty) is no longer valid
+#             # in this setting, since we penalize the norm of the critic's gradient with respect to each input independently and not the enitre batch.
+#             # There is not good & fast implementation of layer normalization --> using per instance normalization nn.InstanceNorm2d()
+#             # Image (Cx32x32)
+#             nn.Conv2d(in_channels=channels, out_channels=256, kernel_size=4, stride=2, padding=1),
+#             nn.InstanceNorm2d(256, affine=True),
+#             nn.LeakyReLU(0.2, inplace=True),
+#
+#             # State (256x16x16)
+#             nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, stride=2, padding=1),
+#             nn.InstanceNorm2d(512, affine=True),
+#             nn.LeakyReLU(0.2, inplace=True),
+#
+#             # State (512x8x8)
+#             nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=4, stride=2, padding=1),
+#             nn.InstanceNorm2d(1024, affine=True),
+#             nn.LeakyReLU(0.2, inplace=True))
+#         # output of main module --> State (1024x4x4)
+#
+#         self.output = nn.Sequential(
+#             # The output of D is no longer a probability, we do not apply sigmoid at the output of D.
+#             # TODO - Their comment above means that this arch cant be useful for DCGAN.
+#             nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=1, padding=0),
+#             # nn.Sigmoid()
+#             )
+#
+#     def forward(self, x):
+#         x = self.main_module(x)
+#         x = self.output(x)
+#         if self.sigmoid:
+#             x = nn.Sigmoid()(x)
+#         return x
+#
+#     def feature_extraction(self, x):
+#         # Use discriminator for feature extraction then flatten to vector of 16384
+#         x = self.main_module(x)
+#         return x.view(-1, 1024 * 4 * 4)
 
 
 class Generator64(torch.nn.Module):
     """DCGAN Generator G(z)"""
 
-    def __init__(self, channels):
+    def __init__(self):
         super(Generator64, self).__init__()
 
         # Project and reshape
@@ -123,17 +197,17 @@ class Generator64(torch.nn.Module):
         """
 
     def forward(self, x):
-        if len(x.shape) == 4:
+        if len(x.shape) > 2:
             x = x.squeeze()
         x = self.linear(x).view(x.size(0), -1, 4, 4)
         return self.features(x)
 
 
-class Discriminator64(torch.nn.Module):
+class Discriminator64_DCGAN(torch.nn.Module):
     """DCGAN Discriminator D(z)"""
 
-    def __init__(self, channels):
-        super(Discriminator64, self).__init__()
+    def __init__(self):
+        super(Discriminator64_DCGAN, self).__init__()
 
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),
@@ -149,7 +223,90 @@ class Discriminator64(torch.nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(512, 1, 4, 1),
             nn.Sigmoid()
-            # TODO - this sigmoid is needed (at least) in the setting of (celebA, DCGAN, 64). Need to figure out its effect in other cases
+        )
+        """
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, 128, 5, 2, 2),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(128, 256, 5, 2, 2),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 512, 5, 2, 2),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(512, 1, 4, bias=False))
+            nn.Sigmoid()
+        """
+
+    def forward(self, x):
+        return self.features(x).view(-1)
+
+
+class Discriminator64_WGANGP(torch.nn.Module):
+    """DCGAN Discriminator D(z)"""
+
+    def __init__(self):
+        super(Discriminator64_WGANGP, self).__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.InstanceNorm2d(128, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(128, 256, 4, 2, 1),
+            nn.InstanceNorm2d(256, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 512, 4, 2, 1),
+            nn.InstanceNorm2d(512, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(512, 1, 4, 1),
+        )
+        """
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, 128, 5, 2, 2),
+            nn.InstanceNorm2d(128, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(128, 256, 5, 2, 2),
+            nn.InstanceNorm2d(256, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 512, 5, 2, 2),
+            nn.InstanceNorm2d(512, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(512, 1, 4, bias=False))
+        """
+
+    def forward(self, x):
+        return self.features(x).view(-1)
+
+
+class Discriminator64(torch.nn.Module):
+    """DCGAN Discriminator D(z)"""
+
+    def __init__(self, sigmoid=True):
+        super(Discriminator64, self).__init__()
+
+        self.sigmoid = sigmoid
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(128, 256, 4, 2, 1),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(256, 512, 4, 2, 1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(512, 1, 4, 1),
+            # nn.Sigmoid() # TODO - was commented out by myself and added in the forward method for the non-wgangp case
         )
         """
         self.features = nn.Sequential(
@@ -168,10 +325,142 @@ class Discriminator64(torch.nn.Module):
         """
 
     def forward(self, x):
-        return self.features(x).view(-1)
+        x = self.features(x)
+        if self.sigmoid:
+            x = nn.Sigmoid()(x)
+        return x.view(-1)
 
     def clip(self, c=0.05):
         """Weight clipping in (-c, c)"""
 
         for p in self.parameters():
             p.data.clamp_(-c, c)
+
+class Generator64_3D(nn.Module):
+    def __init__(self, ngpu=1):
+        super(Generator64_3D, self).__init__()
+        self.ngpu = ngpu
+        nz = 100
+        ngf = 64
+        nc = 1
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution - expected input shape: (batch_size, nz, 1, 1, 1)
+            nn.ConvTranspose3d(nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm3d(ngf * 8),
+            nn.ReLU(True),
+            # state size. (ngf*8) x 4 x 4
+            nn.ConvTranspose3d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ngf * 4),
+            nn.ReLU(True),
+            # state size. (ngf*4) x 8 x 8
+            nn.ConvTranspose3d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ngf * 2),
+            nn.ReLU(True),
+            # state size. (ngf*2) x 16 x 16
+            nn.ConvTranspose3d(ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ngf),
+            nn.ReLU(True),
+            # state size. (ngf) x 32 x 32
+            nn.ConvTranspose3d(ngf, nc, 4, 2, 1, bias=False),
+            # nn.Tanh() # TODO - note: was commented out by myself, as Zhenghan recommended
+            # state size. (nc) x 64 x 64
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+class Discriminator64_3D_DCGAN(nn.Module):
+    def __init__(self, ngpu=1):
+        super(Discriminator64_3D_DCGAN, self).__init__()
+        self.ngpu = ngpu
+        ndf = 64
+        nc = 1
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv3d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 32 x 32
+            nn.Conv3d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv3d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv3d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv3d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+class Discriminator64_3D_WGANGP(nn.Module):
+    def __init__(self, ngpu=1):
+        super(Discriminator64_3D_WGANGP, self).__init__()
+        self.ngpu = ngpu
+        ndf = 64
+        nc = 1
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv3d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 32 x 32
+            nn.Conv3d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.InstanceNorm3d(ndf * 2, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv3d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.InstanceNorm3d(ndf * 4, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv3d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.InstanceNorm3d(ndf * 8, affine=True),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv3d(ndf * 8, 1, 4, 1, 0, bias=False),
+        )
+
+    def forward(self, input):
+        x = self.main(input)
+        return x
+
+class Discriminator64_3D(nn.Module):
+    def __init__(self, ngpu=1, sigmoid=True):
+        super(Discriminator64_3D, self).__init__()
+        self.ngpu = ngpu
+        self.sigmoid = sigmoid
+        ndf = 64
+        nc = 1
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv3d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 32 x 32
+            nn.Conv3d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv3d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv3d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm3d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv3d(ndf * 8, 1, 4, 1, 0, bias=False),
+            # nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        x = self.main(input)
+        if self.sigmoid:
+            x = nn.Sigmoid()(x)
+        return x

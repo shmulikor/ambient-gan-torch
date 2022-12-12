@@ -34,15 +34,16 @@ def transform(image, input_height, input_width, resize_height=64, resize_width=6
                                     resize_height, resize_width)
     else:
         cropped_image = resize(image, [resize_height, resize_width])
-    return np.array(cropped_image)/127.5 - 1.
+    return torch.from_numpy(cropped_image)/127.5 - 1.
 
 
 def get_image(image_path, input_height, input_width, resize_height=64, resize_width=64, is_crop=True):
     image = imread(image_path)
-    return transform(image, input_height, input_width, resize_height, resize_width, is_crop)
+    image = transform(image, input_height, input_width, resize_height, resize_width, is_crop)
+    return image.permute(2, 0, 1).type(torch.FloatTensor)
 
 
-class RealValIterator(object):
+class CelebAdataset(object):
 
     def __init__(self, hparams):
         # Get the data file names
@@ -62,32 +63,16 @@ class RealValIterator(object):
 
         self.batch_size = hparams['batch_size']
         self.model_class = hparams['model_class']
+        self.metadata = None
 
     def __len__(self):
-        return self.total
+        return len(self.datafiles)
 
-    def next(self):
-        start = (self.batch_size * self.pos) % self.total
-        stop = self.batch_size * (self.pos + 1) % self.total
-        self.pos += 1
+    def __getitem__(self, index):
+        return get_image(self.datafiles[index],
+                         input_height=self.input_height,
+                         input_width=self.input_width,
+                         resize_height=self.output_height,
+                         resize_width=self.output_width,
+                         is_crop=self.is_crop), 0
 
-        if start < stop:
-            batch_files = self.datafiles[start:stop]
-        else:
-            batch_files = self.datafiles[start:] + self.datafiles[:stop]
-
-        x_real = [get_image(batch_file,
-                            input_height=self.input_height,
-                            input_width=self.input_width,
-                            resize_height=self.output_height,
-                            resize_width=self.output_width,
-                            is_crop=self.is_crop) for batch_file in batch_files]
-
-        x_real = torch.FloatTensor(np.array(x_real)).permute(0, 3, 1, 2)    # to get NCHW
-
-        if self.model_class == 'unconditional':
-            return x_real
-        elif self.model_class == 'conditional':
-            raise NotImplementedError  # Need labels for celebA
-        else:
-            raise NotImplementedError

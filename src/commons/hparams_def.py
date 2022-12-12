@@ -10,14 +10,15 @@ def get_hparams(args=None):
     hparams = HParams(
 
         # task
-        dataset='celebA',
+        dataset='QSM',
         measurement_type='drop_independent',
-        drop_prob=0.0,  # drop probability
+        drop_prob=0.25,  # drop probability
         patch_size=10,  # size of patch to drop
         blur_radius=1.0,  # Radius for gaussian blurring
         blur_filter_size=3,  # Size of the blurring filter
         additive_noise_std=0.5,  # std deviation of noise to add
         num_angles=1,  # Number of rotate + project measurements
+        num_orientations=3, # Number of orientations for QSM
 
         # mode
         train_mode='ambient',  # ambient, unmeasure, or baseline
@@ -49,9 +50,9 @@ def get_hparams(args=None):
         sample_num=64,  # how many samples are visualized
         max_checkpoints=1,  # maximum number of checkpoints to keep
         inception_num_samples=50000,  # maximum number of checkpoints to keep
-        max_train_iter=25000,
+        max_train_iter=1000000,
 
-        epochs=25,
+        epochs=25000,
 
     )
 

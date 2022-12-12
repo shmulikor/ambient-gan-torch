@@ -25,11 +25,14 @@ def setup_vals(hparams):
         hparams['x_min'] = -1
         hparams['x_max'] = 1
         hparams['signal_power'] = 0.2885201  # Assuming each pixel in [-1, 1]
-    elif hparams['dataset'] == 'cifar10':
-        hparams['c_dim'] = 3
-        hparams['image_dims'] = [3, 32, 32]
-        hparams['train_size'] = 50000
-        hparams['y_dim'] = 10  # [Optional] Number of labels
+    # elif hparams['dataset'] == 'cifar10':
+    #     hparams['c_dim'] = 3
+    #     hparams['image_dims'] = [3, 32, 32]
+    #     hparams['train_size'] = 50000
+    #     hparams['y_dim'] = 10  # [Optional] Number of labels
+    elif hparams['dataset'] == 'QSM':
+        hparams['c_dim'] = 64
+        hparams['image_dims'] = [1, 64, 64, 64]
     else:
         raise NotImplementedError
 
