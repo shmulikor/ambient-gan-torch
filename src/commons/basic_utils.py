@@ -47,7 +47,7 @@ def save_hparams(hparams):
 
 #def try_restore(hparams, sess, model_saver):
 #    # Attempt to restore variables from checkpoint
-#    ckpt_path = get_ckpt_path(hparams.ckpt_dir)
+#    ckpt_path = get_ckpt_path(hparams['ckpt_dir'])
 #    if ckpt_path:  # if a previous ckpt exists
 #        model_saver.restore(sess, ckpt_path)
 #        init_train_iter = int(ckpt_path.split('/')[-1].split('-')[-1])

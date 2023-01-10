@@ -10,9 +10,9 @@ def get_hparams(args=None):
     hparams = HParams(
 
         # task
-        dataset='QSM',
-        measurement_type='drop_independent',
-        drop_prob=0.25,  # drop probability
+        dataset='QSM_phase',
+        measurement_type='QSM_measurement',
+        drop_prob=0.9,  # drop probability
         patch_size=10,  # size of patch to drop
         blur_radius=1.0,  # Radius for gaussian blurring
         blur_filter_size=3,  # Size of the blurring filter
@@ -26,7 +26,7 @@ def get_hparams(args=None):
 
         # model
         model_class='unconditional',
-        model_type='dcgan',
+        model_type='wgangp',
         z_dim=100,
         z_dist='uniform',
         gp_lambda=10.0,  # gradient penalty lambda
@@ -35,7 +35,7 @@ def get_hparams(args=None):
 
         # optimization
         opt_type='adam',  # optimizer type
-        batch_size=64,  # how many examples are processed together
+        batch_size=16,  # how many examples are processed together
         g_lr=0.0002,  # Learning rate for the generator
         d_lr=0.0002,  # Learning rate for the disciminator
         lr_decay='false',
@@ -52,7 +52,7 @@ def get_hparams(args=None):
         inception_num_samples=50000,  # maximum number of checkpoints to keep
         max_train_iter=1000000,
 
-        epochs=25000,
+        epochs=250000,
 
     )
 

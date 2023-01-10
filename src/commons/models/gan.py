@@ -12,6 +12,7 @@ import nibabel as nib
 from torchvision import utils
 
 from commons import measure
+from QSM.gen import utils as QSM_utils
 from commons.inception import get_inception_score_rgb, get_inception_score_grayscale
 from commons.logger import Logger
 from abc import ABC, abstractmethod
@@ -27,8 +28,12 @@ def normalize_image(img):
 
 class GAN_Model(ABC):
     def __init__(self, generator, discriminator, dataset, hparams, clean_data=True):
-        self.dataloader = torch.utils.data.DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True, num_workers=0,
-                                                 drop_last=True)
+        if hparams['dataset'] == 'QSM_phase':
+            batch_sampler = QSM_utils.QSMBatchSampler(dataset, batch_size=hparams['batch_size'])
+            self.dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_sampler=batch_sampler)
+        else:
+            self.dataloader = torch.utils.data.DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True,
+                                                          num_workers=0, drop_last=True)
         print("initialize GAN model")
         self.G = generator
         self.D = discriminator
@@ -96,29 +101,44 @@ class GAN_Model(ABC):
             self.save_2D_grid(filename=filename, n_images=n_images)
             print(f"Grid of images was saved as {os.path.join(self.hparams['sample_dir'], filename)}.png")
         else:
-            self.save_slices_grid(filename=filename, n_images=n_images)
+            fid_score = self.save_slices_grid(filename=filename, n_images=n_images, save_3d=True, fid=True)
             print(f"Grid of 2D slices was saved as {os.path.join(self.hparams['sample_dir'], filename)}.png")
-            images = self.generate_images(n_images=n_images)
-            for i in range(n_images):
-                self.save_3D_image(image=images[i], filename=str(i).zfill(3))
             print(f"{n_images} 3D images were saved to {self.hparams['sample_dir']}")
+            print(f"The FID score is {fid_score}")
 
 
     def log_real_images(self, images):
-        if (self.C == 3):
-            return to_np(images.view(-1, self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+        if self.two_dim_img:
+            if self.C == 3:
+                return to_np(images.view(-1, self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+            else:
+                return to_np(images.view(-1, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
         else:
-            return to_np(images.view(-1, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+            return self.log_slices(images=images)
 
     def log_generated_images(self):
-        samples = self.generate_images(n_images=self.n_images_to_log)
-        generated_images = []
-        for sample in samples:
-            if self.C == 3:
-                generated_images.append(sample.reshape(self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
-            else:
-                generated_images.append(sample.reshape(self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
-        return np.array(generated_images)
+        if self.two_dim_img:
+            samples = self.generate_images(n_images=self.n_images_to_log)
+            generated_images = []
+            for sample in samples:
+                if self.C == 3:
+                    generated_images.append(sample.reshape(self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+                else:
+                    generated_images.append(sample.reshape(self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+            return np.array(generated_images)
+        else:
+            return self.log_slices(images=None)
+
+
+    def log_slices(self, images=None):
+        n_images = self.n_images_to_log // 3
+        images = self.generate_images(n_images=n_images) if images is None else images[:n_images]
+        slice_num = np.random.choice(images.shape[-1])
+        all_slices = torch.cat((images[:, :, :, :, slice_num], images[:, :, :, slice_num, :], images[:, :, slice_num, :, :]))
+        normalized = torch.stack([normalize_image(slice) for slice in all_slices])
+        normalized = 2 * normalized - 1
+        return to_np(normalized)
+
 
     def log_inception_score(self, iter):
         sampled_images = self.generate_images(n_images=800)
@@ -197,8 +217,8 @@ class GAN_Model(ABC):
             print('no model to load')
         return start_epoch, iters_counter
 
-    def measure_images(self, images):
-        theta = self.get_torch_variable(self.mdevice.sample_theta(self.hparams))
+    def measure_images(self, images, labels=None):
+        theta = self.get_torch_variable(self.mdevice.sample_theta(self.hparams, labels))
         measurements = self.mdevice.measure(self.hparams, images, theta)
         return measurements
 
@@ -212,7 +232,8 @@ class GAN_Model(ABC):
 
     def save_2D_grid(self, filename, n_images=64):
         samples = self.generate_images(n_images=n_images)
-        samples = samples.mul(0.5).add(0.5)
+        if self.hparams['dataset'] == 'mnist' or self.hparams['dataset'] == 'celebA':
+            samples = samples.mul(0.5).add(0.5)
         samples = samples.data.cpu()
         grid = utils.make_grid(samples)
         utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
@@ -222,14 +243,21 @@ class GAN_Model(ABC):
             os.path.join(self.hparams['sample_dir'], f"{filename}.nii.gz"))
 
 
-    def save_slices_grid(self, filename, n_images=8):
-        fake_images = self.generate_images(n_images=n_images)
-        slice = np.random.choice(fake_images.shape[-1])
-        img_fake = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice],
-                                              fake_images[:, :, :, slice, :],
-                                              fake_images[:, :, slice, :, :])),
+    def save_slices_grid(self, filename, n_images=8, save_3d=False, fid=False):
+        self.G.eval()
+        fake_images = self.generate_images(n_images=n_images) if not fid else self.save_fid_images(real=False, n_images=n_images)
+        if save_3d:
+            for i in range(n_images):
+                self.save_3D_image(image=fake_images[i], filename=str(i).zfill(3))
+        slice_num = np.random.choice(fake_images.shape[-1])
+        img_fake = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice_num],
+                                              fake_images[:, :, :, slice_num, :],
+                                              fake_images[:, :, slice_num, :, :])),
                                    nrow=n_images, padding=2, normalize=True, scale_each=True)
         utils.save_image(img_fake, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
+        self.G.train()
+        if fid:
+            return self.fid_calculator()
 
     def save_real_measurements(self, real_measurements):
         if self.two_dim_img:
@@ -252,8 +280,8 @@ class GAN_Model(ABC):
                 self.save_3D_image(image=measurement, filename=os.path.join(real_dir, f"real_measurements_{str(i).zfill(3)}"))
 
     def path_for_fid(self):
-        path = f"src/{self.hparams['dataset']}/fid"
-        #path = f"src/{self.hparams['dataset']}/fid" if 'src' not in os.getcwd() else f"{self.hparams['dataset']}/fid"
+        # path = f"src/fid/{self.hparams['dataset']}"
+        path = f"src/fid{self.hparams['dataset']}" if 'src' not in os.getcwd() else f"fid/{self.hparams['dataset']}"
         # TODO - the line above is only for the weird case of running from 2 different base dirs. Don't commit it.
         if not os.path.isdir(path):
             os.makedirs(path)
@@ -263,18 +291,26 @@ class GAN_Model(ABC):
             os.makedirs(os.path.join(path, 'fake'))
         return path
 
-    def save_fid_images(self, real=False):
+    def save_fid_images(self, real=False, n_images=64):
+        self.G.eval()
         path = os.path.join(self.fid_path, 'real' if real else 'fake')
         if real and len(os.listdir(path)):
             return
+        if real and not self.clean_data:
+            print("No clean data for QSM Phase data. Can't save real images for FID score calculation.")
+            return
         # TODO - how many real images do I need to save?
-        images = next(iter(self.dataloader))[0] if real else self.generate_images(n_images=64)
+        images = next(iter(self.dataloader))[0] if real else self.generate_images(n_images=n_images)
         if self.two_dim_img:
             [utils.save_image(normalize_image(images[i]), f"{path}/{i}.png") for i in range(len(images))]
         else:
+            if len(images.shape) == 6:
+                images = images.flatten(start_dim=0, end_dim=1)
             val = np.random.choice(self.hparams['image_dims'][-1])
             all_slices = torch.cat((images[:, :, :, :, val], images[:, :, :, val, :], images[:, :, val, :, :]))
             [utils.save_image(normalize_image(all_slices[i]), f"{path}/{i}.png") for i in range(len(all_slices))]
+        self.G.train()
+        return images
 
     def fid_calculator(self):
         fid_score = calculate_fid_given_paths(

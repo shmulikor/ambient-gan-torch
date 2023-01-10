@@ -35,6 +35,8 @@ def get_mdevice(hparams):
         mdevice = PadRotateProject(hparams)
     elif hparams['measurement_type'] == 'pad_rotate_project_with_theta':
         mdevice = PadRotateProjectWithTheta(hparams)
+    elif hparams['measurement_type'] == 'QSM_measurement':
+        mdevice = QSM_Measurement(hparams)
     else:
         raise NotImplementedError
     return mdevice
@@ -48,7 +50,7 @@ class MeasurementDevice(object):
         self.batch_dims = [hparams['batch_size']] + hparams['image_dims']
         self.output_type = None  # indicate whether image or vector
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         """Abstract Method"""
         # Should return theta_val
         raise NotImplementedError
@@ -67,6 +69,46 @@ class MeasurementDevice(object):
         # Should return x_hat
         raise NotImplementedError
 
+class QSM_Measurement(MeasurementDevice):
+
+    def __init__(self, hparams):
+        MeasurementDevice.__init__(self, hparams)
+        self.output_type = '3D_image'
+        self.alpha = torch.nn.Parameter(torch.ones(1)*4)
+
+    def sample_theta(self, hparams, labels=None):
+        batch_size, _, x_dim, y_dim, z_dim = self.batch_dims
+
+        dk_batch = []
+
+        for b_n in range(batch_size):
+            dk_batch.append([])
+
+            for ori in range(hparams['num_orientations']):
+                path = labels[b_n][ori].split('/')
+                path.pop(3) # remove the 'whole'
+                path[3] = 'dipole_data'
+                # path.append(f"{path[4]}_{path[5]}_dipole.npy")
+                path[-1] = f"{path[4]}_{path[5]}_dipole.npy"
+                dipole_path = '/'.join(path)
+
+                dk_batch[-1].append(torch.from_numpy(np.load(dipole_path)))
+
+        dk_batch = torch.stack([torch.stack(dk_batch[i]) for i in range(len(dk_batch))])
+        return dk_batch
+
+    def measure(self, hparams, x, theta):
+        measurements = []
+        for b_n in range(len(theta)):
+            measurements_by_orientation = []
+            for ori in range(len(theta[b_n])):
+                _, _, x_dim, y_dim, z_dim = x.shape
+                f = torch.fft.fftn(x[b_n], s=theta[b_n][ori].shape, norm='ortho')
+                d_f = theta[b_n][ori] * f
+                f_inv_d_f = torch.fft.ifftn(d_f, norm='ortho')[:, :x_dim, :y_dim, :z_dim]
+                measurements_by_orientation.append(f_inv_d_f.real)
+            measurements.append(torch.stack(measurements_by_orientation))
+        return torch.stack(measurements).type(torch.cuda.FloatTensor)
 
 class DropDevice(MeasurementDevice):
 
@@ -74,13 +116,16 @@ class DropDevice(MeasurementDevice):
         MeasurementDevice.__init__(self, hparams)
         self.output_type = 'image'
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         """Abstract Method"""
         # Should return theta_val
         raise NotImplementedError
 
     def measure(self, hparams, x, theta):
-        x_measured = torch.multiply(theta, x.mul(0.5).add(0.5)).mul(2).add(-1)
+        if hparams['dataset'] == 'mnist' or hparams['dataset'] == 'celebA':
+            x_measured = torch.multiply(theta, x.mul(0.5).add(0.5)).mul(2).add(-1) # only for mnist and celebA
+        else:
+            x_measured = torch.multiply(theta, x) # for the 3D case
         return x_measured
 
     def measure_np(self, hparams, x_val, theta_val):
@@ -117,7 +162,7 @@ class DropMaskType1(DropDevice):
         # Should return noise_shape
         raise NotImplementedError
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         noise_shape = self.get_noise_shape()
         # if hparams['dataset'] == 'QSM':
         #     noise_shape[0] *= hparams['num_orientations']
@@ -157,7 +202,7 @@ class DropCol(DropMaskType1):
 
 class DropRowCol(DropDevice):
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         drop_row = DropRow(hparams)
         mask1 = drop_row.sample_theta(hparams)
         drop_col = DropCol(hparams)
@@ -168,7 +213,7 @@ class DropRowCol(DropDevice):
 
 class DropMaskType2(DropDevice):
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         raise NotImplementedError
 
     def patch_mask(self, hparams):
@@ -183,13 +228,13 @@ class DropMaskType2(DropDevice):
 
 class DropPatch(DropMaskType2):
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         return self.patch_mask(hparams)
 
 
 class KeepPatch(DropMaskType2):
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         return 1 - self.patch_mask(hparams)
 
 
@@ -199,7 +244,7 @@ class ExtractPatch(MeasurementDevice):
         MeasurementDevice.__init__(self, hparams)
         self.output_type = 'image'
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         k = hparams['patch_size']
         h, w = hparams['image_dims'][1:3]
         theta = np.zeros([hparams['batch_size'], 2])
@@ -234,7 +279,7 @@ class BlurAddNoise(MeasurementDevice):
         MeasurementDevice.__init__(self, hparams)
         self.output_type = 'image'
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         theta_val = hparams['additive_noise_std'] * torch.randn(*(self.batch_dims))
         return theta_val
 
@@ -262,7 +307,7 @@ class PadRotateProjectDevice(MeasurementDevice):
         MeasurementDevice.__init__(self, hparams)
         self.output_type = 'vector'
 
-    def sample_theta(self, hparams):
+    def sample_theta(self, hparams, labels=None):
         theta = (2*np.pi)*np.random.random((hparams['batch_size'], hparams['num_angles'])) - np.pi
         return torch.Tensor(theta)
 
@@ -272,7 +317,6 @@ class PadRotateProjectDevice(MeasurementDevice):
 
 class PadRotateProject(PadRotateProjectDevice):
 
-	
     def measure(self, hparams, x, theta): 
         # TODO - replace with torch implementation
         x_padded = measure_utils.pad(hparams, x)

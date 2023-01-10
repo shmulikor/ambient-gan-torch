@@ -49,8 +49,8 @@ class WGAN_GP(GAN_Model):
         one = self.get_torch_variable(torch.tensor(1, dtype=torch.float))
         mone = one * -1
 
-        # start_epoch, iters_counter = 0, 0
         start_epoch, iters_counter = self.load_model()
+        self.G.train()
 
         for epoch in range(start_epoch, self.hparams['epochs']):
 
@@ -68,32 +68,47 @@ class WGAN_GP(GAN_Model):
                 for d_iter in range(self.critic_iter):
                     self.D.zero_grad()
 
-
                     # Train discriminator
                     # WGAN - Training discriminator more iterations than generator
                     # Train with real images
                     real_images = self.get_torch_variable(data[0])
-                    real_measurements = self.measure_images(real_images)
+                    labels = data[1]
+                    if self.hparams['dataset'] == 'QSM_phase':
+                        labels = np.array(data[1]).T
+                        real_measurements = real_images.type(torch.cuda.FloatTensor)
+                    else:
+                        real_measurements = self.measure_images(real_images, labels)
+
+
+                    # save original images
+                    if d_iter == 0 and self.hparams['dataset'].startswith('QSM') and iters_counter % SAVE_PER_TIMES == 0:
+                        # as nifti
+                        obj_to_save = real_measurements[0] if len(real_measurements.shape) == 5 else real_measurements[0, 0]
+                        nib.Nifti1Image(obj_to_save.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
+                            os.path.join(self.hparams['sample_dir'], f"real_measurements_iter_{str(iters_counter).zfill(3)}.nii.gz"))
+
+                        # as png
+                        slice_num = np.random.choice(real_measurements.shape[-1])
+                        if len(real_measurements.shape) == 5:
+                            obj_to_save = torch.cat((real_measurements[:, :, :, :, slice_num],
+                                                     real_measurements[:, :, :, slice_num, :],
+                                                     real_measurements[:, :, slice_num, :, :]))
+                        else:
+                            obj_to_save = torch.cat((real_measurements[:, 0, :, :, :, slice_num],
+                                                     real_measurements[:, 0, :, :, slice_num, :],
+                                                     real_measurements[:, 0, :, slice_num, :, :]))
+
+                        img_real = utils.make_grid(obj_to_save, nrow=8, padding=2, normalize=True, scale_each=True)
+                        utils.save_image(img_real,
+                                         os.path.join(self.hparams['sample_dir'],
+                                                      f"real_measurements_iter_{str(iters_counter).zfill(3)}.png"))
 
                     # save one example of the measurement
                     if self.clean_data and iters_counter == 0:
                         self.save_real_measurements(real_measurements)
 
-                    # save original images
-                    if d_iter == 0 and self.hparams['dataset'] == 'QSM' and iters_counter % SAVE_PER_TIMES == 0:
-                        # as nifti
-                        nib.Nifti1Image(real_measurements[0].cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
-                            os.path.join(self.hparams['sample_dir'], f"real_measurements_iter_{str(iters_counter).zfill(3)}.nii.gz"))
-
-                        # as png
-                        img_real = utils.make_grid(torch.cat((real_measurements[:, :, :, :, 16],
-                                                               real_measurements[:, :, :, 16, :],
-                                                               real_measurements[:, :, 16, :, :])), nrow=6, padding=2,
-                                                    normalize=True, scale_each=True)
-                        utils.save_image(img_real,
-                                         os.path.join(self.hparams['sample_dir'],
-                                                      f"real_measurements_iter_{str(iters_counter).zfill(3)}.png"))
-
+                    if len(real_measurements.shape) == 6:
+                        real_measurements = real_measurements.flatten(start_dim=0, end_dim=1)
                     d_loss_real = self.D(real_measurements)
                     d_loss_real = d_loss_real.mean()
                     d_loss_real.backward(mone)
@@ -101,13 +116,18 @@ class WGAN_GP(GAN_Model):
 
                     # Train with fake images
                     fake_images = self.generate_images(n_images=self.batch_size)
-                    fake_measurements = self.measure_images(fake_images)
+                    fake_measurements = self.measure_images(fake_images, labels)
 
                     # save generated images
-                    if d_iter == 0 and self.hparams['dataset'] == 'QSM' and iters_counter % SAVE_PER_TIMES == 0:
-                        nib.Nifti1Image(fake_measurements[0].cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
+                    if d_iter == 0 and self.hparams['dataset'].startswith('QSM') and iters_counter % SAVE_PER_TIMES == 0:
+                        self.G.eval()
+                        obj_to_save = fake_measurements[0] if len(fake_measurements.shape) == 5 else fake_measurements[0, 0]
+                        nib.Nifti1Image(obj_to_save.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
                             os.path.join(self.hparams['sample_dir'], f"img_generator_iter_{str(iters_counter).zfill(3)}.nii.gz"))
+                        self.G.train()
 
+                    if len(fake_measurements.shape) == 6:
+                        fake_measurements = fake_measurements.flatten(start_dim=0, end_dim=1)
                     d_loss_fake = self.D(fake_measurements)
                     d_loss_fake = d_loss_fake.mean()
                     d_loss_fake.backward(one)
@@ -130,8 +150,10 @@ class WGAN_GP(GAN_Model):
                 # train generator
                 # compute loss with fake images
                 fake_images = self.generate_images(n_images=self.batch_size)
-                fake_measurements = self.measure_images(fake_images)
+                fake_measurements = self.measure_images(fake_images, labels)
 
+                if len(fake_measurements.shape) == 6:
+                    fake_measurements = fake_measurements.flatten(start_dim=0, end_dim=1)
                 g_loss = self.D(fake_measurements)
                 g_loss = g_loss.mean()
                 g_loss.backward(mone)
@@ -158,12 +180,6 @@ class WGAN_GP(GAN_Model):
                         self.save_2D_grid(filename=f"img_generator_iter_{str(iters_counter).zfill(3)}")
                     else:
                         self.save_slices_grid(filename=f"img_generator_iter_{str(iters_counter).zfill(3)}")
-                        # fake = self.generate_images(n_images=6)
-                        # img_fake = utils.make_grid(torch.cat((fake[:, :, :, :, 16],
-                        #                                        fake[:, :, :, 16, :],
-                        #                                        fake[:, :, 16, :, :])), nrow=6, padding=2, normalize=True, scale_each=True)
-                        # utils.save_image(img_fake,
-                        #                  os.path.join(self.hparams['sample_dir'], f"img_generator_iter_{str(iters_counter).zfill(3)}.png"))
 
                     # ============ TensorBoard logging ============#
                     # (1) Log the scalar values
@@ -178,15 +194,15 @@ class WGAN_GP(GAN_Model):
                     for tag, value in info.items():
                         self.logger.scalar_summary(tag, value.cpu(), iters_counter + 1)
 
-                    # (2) Log the images
-                    if self.two_dim_img:
-                        info = {
-                            'real_images': self.log_real_images(real_images),
-                            'generated_images': self.log_generated_images()
-                        }
-
-                        for tag, images in info.items():
-                            self.logger.image_summary(tag, images, iters_counter + 1)
+                    # # (2) Log the images
+                    # if self.two_dim_img:
+                    #     info = {
+                    #         'real_images': self.log_real_images(real_images),
+                    #         'generated_images': self.log_generated_images()
+                    #     }
+                    #
+                    #     for tag, images in info.items():
+                    #         self.logger.image_summary(tag, images, iters_counter + 1)
 
                     # (3) Log inception score
                     if self.has_inception_model:
@@ -201,22 +217,22 @@ class WGAN_GP(GAN_Model):
                         for tag, value in info.items():
                             self.logger.scalar_summary(tag, value, iters_counter + 1)
 
-
                 iters_counter += 1
 
         self.t_end = t.time()
         print('Time of training-{}'.format((self.t_end - self.t_begin)))
 
         # Save the trained parameters
-        self.save_model()
+        self.save_model(iters_counter)
 
     def calculate_gradient_penalty(self, real_images, fake_images):
+        assert real_images.shape == fake_images.shape
         if self.two_dim_img:
-            eta = torch.FloatTensor(self.batch_size, 1, 1, 1).uniform_(0, 1)
-            eta = eta.expand(self.batch_size, real_images.size(1), real_images.size(2), real_images.size(3))
+            eta = torch.FloatTensor(real_images.shape[0], 1, 1, 1).uniform_(0, 1)
+            eta = eta.expand(real_images.shape[0], real_images.size(1), real_images.size(2), real_images.size(3))
         else:
-            eta = torch.FloatTensor(self.batch_size, 1, 1, 1, 1).uniform_(0, 1)
-            eta = eta.expand(self.batch_size, real_images.size(1), real_images.size(2), real_images.size(3), real_images.size(4))
+            eta = torch.FloatTensor(real_images.shape[0], 1, 1, 1, 1).uniform_(0, 1)
+            eta = eta.expand(real_images.shape[0], real_images.size(1), real_images.size(2), real_images.size(3), real_images.size(4))
 
         if self.cuda:
             eta = eta.cuda(self.cuda_index)

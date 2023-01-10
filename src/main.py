@@ -12,7 +12,7 @@ from celebA.gen import utils as celebA_utils
 from commons import basic_utils
 from commons import hparams_def
 from commons import utils
-from commons.models.dcgan import DCGAN_MODEL
+from commons.models.dcgan import DCGAN
 from commons.models.wgan_gradient_penalty import WGAN_GP
 from commons.arch import Generator32, Discriminator32_DCGAN, Discriminator32_WGANGP
 from commons.arch import Generator64, Discriminator64_DCGAN, Discriminator64_WGANGP
@@ -50,9 +50,12 @@ def main(hparams):
         dataset = celebA_utils.CelebAdataset(hparams)
         generator = Generator64()
         discriminator = Discriminator64_DCGAN() if hparams['model_type'] == 'dcgan' else Discriminator64_WGANGP()
-    elif hparams['dataset'] == 'QSM':
-        # data_iterator = QSM_utils.PhaseDataIterator(hparams)
-        dataset = QSM_utils.CosmosDataIterator()
+    elif hparams['dataset'] == 'QSM_cosmos':
+        dataset = QSM_utils.CosmosDataset()
+        generator = Generator64_3D()
+        discriminator = Discriminator64_3D_DCGAN() if hparams['model_type'] == 'dcgan' else Discriminator64_3D_WGANGP()
+    elif hparams['dataset'] == 'QSM_phase':
+        dataset = QSM_utils.PhaseDataset(hparams)
         generator = Generator64_3D()
         discriminator = Discriminator64_3D_DCGAN() if hparams['model_type'] == 'dcgan' else Discriminator64_3D_WGANGP()
         clean_data = False
@@ -61,14 +64,14 @@ def main(hparams):
 
     # define model
     if hparams['model_type'] == 'dcgan':
-        model = DCGAN_MODEL(generator, discriminator, dataset, hparams, clean_data)
+        model = DCGAN(generator, discriminator, dataset, hparams, clean_data)
     elif hparams['model_type'] == 'wgangp':
         model = WGAN_GP(generator, discriminator, dataset, hparams, clean_data)
     else:
         raise NotImplementedError
 
     model.train()
-    # model.evaluate(n_images=5)
+    # model.evaluate(n_images=10)
 
 
 if __name__ == '__main__':

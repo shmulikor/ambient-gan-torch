@@ -30,7 +30,7 @@ def setup_vals(hparams):
     #     hparams['image_dims'] = [3, 32, 32]
     #     hparams['train_size'] = 50000
     #     hparams['y_dim'] = 10  # [Optional] Number of labels
-    elif hparams['dataset'] == 'QSM':
+    elif hparams['dataset'] == 'QSM_phase' or hparams['dataset'] == 'QSM_cosmos':
         hparams['c_dim'] = 64
         hparams['image_dims'] = [1, 64, 64, 64]
     else:

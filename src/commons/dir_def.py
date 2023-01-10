@@ -26,6 +26,8 @@ def get_task_dir(hparams):
             hparams['measurement_type'],
             hparams['num_angles'],
         )
+    elif hparams['measurement_type'] == 'QSM_measurement':
+        task_dir = 'no{}/'.format(hparams['num_orientations'])
     else:
         raise NotImplementedError
 
