@@ -1,6 +1,6 @@
-# The Generator32 and Discriminator32 code are based on
+# The Generator32 code is based on
 # https://github.com/Zeleni9/pytorch-wgan/blob/master/models/wgan_gradient_penalty.py
-# The Generator64 and Discriminator64 code are based on
+# The Generator64 code is based on
 # https://github.com/joeylitalien/celeba-gan-pytorch/blob/master/src/dcgan.py
 
 
@@ -9,7 +9,7 @@ import torch.nn as nn
 
 
 class Generator32(torch.nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels=1):
         super().__init__()
         # Filters [1024, 512, 256]
         # Input_dim = 100
@@ -42,7 +42,7 @@ class Generator32(torch.nn.Module):
 
 
 class Discriminator32_WGANGP(torch.nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels=1):
         super().__init__()
         # Filters [256, 512, 1024]
         # Input_dim = channels (Cx64x64)
@@ -77,7 +77,7 @@ class Discriminator32_WGANGP(torch.nn.Module):
         return self.output(x)
 
 class Discriminator32_DCGAN(torch.nn.Module):
-    def __init__(self, channels):
+    def __init__(self, channels=1):
         super().__init__()
         # Filters [256, 512, 1024]
         # Input_dim = channels (Cx64x64)
@@ -106,53 +106,6 @@ class Discriminator32_DCGAN(torch.nn.Module):
     def forward(self, x):
         x = self.main_module(x)
         return self.output(x)
-
-
-# class Discriminator32(torch.nn.Module):
-#     def __init__(self, channels, sigmoid=True):
-#         super().__init__()
-#         # Filters [256, 512, 1024]
-#         # Input_dim = channels (Cx64x64)
-#         # Output_dim = 1
-#         self.sigmoid = sigmoid
-#         self.main_module = nn.Sequential(
-#             # Omitting batch normalization in critic because our new penalized training objective (WGAN with gradient penalty) is no longer valid
-#             # in this setting, since we penalize the norm of the critic's gradient with respect to each input independently and not the enitre batch.
-#             # There is not good & fast implementation of layer normalization --> using per instance normalization nn.InstanceNorm2d()
-#             # Image (Cx32x32)
-#             nn.Conv2d(in_channels=channels, out_channels=256, kernel_size=4, stride=2, padding=1),
-#             nn.InstanceNorm2d(256, affine=True),
-#             nn.LeakyReLU(0.2, inplace=True),
-#
-#             # State (256x16x16)
-#             nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, stride=2, padding=1),
-#             nn.InstanceNorm2d(512, affine=True),
-#             nn.LeakyReLU(0.2, inplace=True),
-#
-#             # State (512x8x8)
-#             nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=4, stride=2, padding=1),
-#             nn.InstanceNorm2d(1024, affine=True),
-#             nn.LeakyReLU(0.2, inplace=True))
-#         # output of main module --> State (1024x4x4)
-#
-#         self.output = nn.Sequential(
-#             # The output of D is no longer a probability, we do not apply sigmoid at the output of D.
-#             # TODO - Their comment above means that this arch cant be useful for DCGAN.
-#             nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=1, padding=0),
-#             # nn.Sigmoid()
-#             )
-#
-#     def forward(self, x):
-#         x = self.main_module(x)
-#         x = self.output(x)
-#         if self.sigmoid:
-#             x = nn.Sigmoid()(x)
-#         return x
-#
-#     def feature_extraction(self, x):
-#         # Use discriminator for feature extraction then flatten to vector of 16384
-#         x = self.main_module(x)
-#         return x.view(-1, 1024 * 4 * 4)
 
 
 class Generator64(torch.nn.Module):
@@ -284,57 +237,6 @@ class Discriminator64_WGANGP(torch.nn.Module):
     def forward(self, x):
         return self.features(x).view(-1)
 
-
-class Discriminator64(torch.nn.Module):
-    """DCGAN Discriminator D(z)"""
-
-    def __init__(self, sigmoid=True):
-        super(Discriminator64, self).__init__()
-
-        self.sigmoid = sigmoid
-
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, 4, 2, 1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(128, 256, 4, 2, 1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(256, 512, 4, 2, 1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(512, 1, 4, 1),
-            # nn.Sigmoid() # TODO - was commented out by myself and added in the forward method for the non-wgangp case
-        )
-        """
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, 5, 2, 2),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(128, 256, 5, 2, 2),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(256, 512, 5, 2, 2),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(512, 1, 4, bias=False))
-        """
-
-    def forward(self, x):
-        x = self.features(x)
-        if self.sigmoid:
-            x = nn.Sigmoid()(x)
-        return x.view(-1)
-
-    def clip(self, c=0.05):
-        """Weight clipping in (-c, c)"""
-
-        for p in self.parameters():
-            p.data.clamp_(-c, c)
 
 class Generator64_3D(nn.Module):
     def __init__(self, ngpu=1):

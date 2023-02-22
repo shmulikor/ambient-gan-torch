@@ -1,14 +1,10 @@
-import os
 import time as t
 
 import matplotlib.pyplot as plt
-import nibabel as nib
-import numpy as np
 import torch
 import torch.optim as optim
 from torch import autograd
 from torch.autograd import Variable
-from torchvision import utils
 
 plt.switch_backend('agg')
 
@@ -18,8 +14,8 @@ SAVE_PER_TIMES = 100
 
 
 class WGAN_GP(GAN_Model):
-    def __init__(self, generator, discriminator, data_iterator, hparams, clean_data=True):
-        super().__init__(generator, discriminator, data_iterator, hparams, clean_data)
+    def __init__(self, generator, discriminator, data_iterator, hparams):
+        super().__init__(generator, discriminator, data_iterator, hparams)
         print("initialize WGAN_GradientPenalty model")
 
         # # Values for reference
@@ -27,19 +23,19 @@ class WGAN_GP(GAN_Model):
         # self.g_optimizer = optim.Adam(self.G.parameters(), lr=1e-4, betas=(0.5, 0.999))
 
         self.critic_iter = 5
-        self.lambda_term = 10
+        self.lambda_term = self.hparams['gp_lambda']
 
     def get_G_optimizer(self):
-        learning_rate = 1e-4
-        b1 = 0.5
-        b2 = 0.999
+        learning_rate = self.hparams['g_lr']
+        b1 = self.hparams['opt_param1']
+        b2 = self.hparams['opt_param2']
         G_optimizer = optim.Adam(self.G.parameters(), lr=learning_rate, betas=(b1, b2))
         return G_optimizer
 
     def get_D_optimizer(self):
-        learning_rate = 1e-4
-        b1 = 0.5
-        b2 = 0.999
+        learning_rate = self.hparams['d_lr']
+        b1 = self.hparams['opt_param1']
+        b2 = self.hparams['opt_param2']
         D_optimizer = optim.Adam(self.D.parameters(), lr=learning_rate, betas=(b1, b2))
         return D_optimizer
 
@@ -54,7 +50,7 @@ class WGAN_GP(GAN_Model):
 
         for epoch in range(start_epoch, self.hparams['epochs']):
 
-            for g_iter, data in enumerate(self.dataloader, 0):
+            for g_iter, data in enumerate(self.dataloader):
 
                 # Requires grad, Generator requires_grad = False
                 for p in self.D.parameters():
@@ -73,42 +69,12 @@ class WGAN_GP(GAN_Model):
                     # Train with real images
                     real_images = self.get_torch_variable(data[0])
                     labels = data[1]
-                    if self.hparams['dataset'] == 'QSM_phase':
-                        labels = np.array(data[1]).T
-                        real_measurements = real_images.type(torch.cuda.FloatTensor)
-                    else:
-                        real_measurements = self.measure_images(real_images, labels)
-
-
-                    # save original images
-                    if d_iter == 0 and self.hparams['dataset'].startswith('QSM') and iters_counter % SAVE_PER_TIMES == 0:
-                        # as nifti
-                        obj_to_save = real_measurements[0] if len(real_measurements.shape) == 5 else real_measurements[0, 0]
-                        nib.Nifti1Image(obj_to_save.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
-                            os.path.join(self.hparams['sample_dir'], f"real_measurements_iter_{str(iters_counter).zfill(3)}.nii.gz"))
-
-                        # as png
-                        slice_num = np.random.choice(real_measurements.shape[-1])
-                        if len(real_measurements.shape) == 5:
-                            obj_to_save = torch.cat((real_measurements[:, :, :, :, slice_num],
-                                                     real_measurements[:, :, :, slice_num, :],
-                                                     real_measurements[:, :, slice_num, :, :]))
-                        else:
-                            obj_to_save = torch.cat((real_measurements[:, 0, :, :, :, slice_num],
-                                                     real_measurements[:, 0, :, :, slice_num, :],
-                                                     real_measurements[:, 0, :, slice_num, :, :]))
-
-                        img_real = utils.make_grid(obj_to_save, nrow=8, padding=2, normalize=True, scale_each=True)
-                        utils.save_image(img_real,
-                                         os.path.join(self.hparams['sample_dir'],
-                                                      f"real_measurements_iter_{str(iters_counter).zfill(3)}.png"))
+                    real_measurements = self.measure_images(real_images, labels)
 
                     # save one example of the measurement
-                    if self.clean_data and iters_counter == 0:
+                    if iters_counter == 0:
                         self.save_real_measurements(real_measurements)
 
-                    if len(real_measurements.shape) == 6:
-                        real_measurements = real_measurements.flatten(start_dim=0, end_dim=1)
                     d_loss_real = self.D(real_measurements)
                     d_loss_real = d_loss_real.mean()
                     d_loss_real.backward(mone)
@@ -118,16 +84,6 @@ class WGAN_GP(GAN_Model):
                     fake_images = self.generate_images(n_images=self.batch_size)
                     fake_measurements = self.measure_images(fake_images, labels)
 
-                    # save generated images
-                    if d_iter == 0 and self.hparams['dataset'].startswith('QSM') and iters_counter % SAVE_PER_TIMES == 0:
-                        self.G.eval()
-                        obj_to_save = fake_measurements[0] if len(fake_measurements.shape) == 5 else fake_measurements[0, 0]
-                        nib.Nifti1Image(obj_to_save.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
-                            os.path.join(self.hparams['sample_dir'], f"img_generator_iter_{str(iters_counter).zfill(3)}.nii.gz"))
-                        self.G.train()
-
-                    if len(fake_measurements.shape) == 6:
-                        fake_measurements = fake_measurements.flatten(start_dim=0, end_dim=1)
                     d_loss_fake = self.D(fake_measurements)
                     d_loss_fake = d_loss_fake.mean()
                     d_loss_fake.backward(one)
@@ -140,7 +96,6 @@ class WGAN_GP(GAN_Model):
                     d_loss = d_loss_fake - d_loss_real + gradient_penalty
                     Wasserstein_D = d_loss_real - d_loss_fake
                     self.D_optimizer.step()
-                    # print(f'  Discriminator iteration: {d_iter + 1}/{self.critic_iter}, loss_fake: {d_loss_fake}, loss_real: {d_loss_real}')
 
                 # Generator update
                 for p in self.D.parameters():
@@ -152,8 +107,6 @@ class WGAN_GP(GAN_Model):
                 fake_images = self.generate_images(n_images=self.batch_size)
                 fake_measurements = self.measure_images(fake_images, labels)
 
-                if len(fake_measurements.shape) == 6:
-                    fake_measurements = fake_measurements.flatten(start_dim=0, end_dim=1)
                 g_loss = self.D(fake_measurements)
                 g_loss = g_loss.mean()
                 g_loss.backward(mone)
@@ -165,21 +118,17 @@ class WGAN_GP(GAN_Model):
                           (epoch, self.hparams['epochs'], g_iter, len(self.dataloader),
                            d_loss.item(), g_loss.item(), D_x, D_G_z1, D_G_z2))
 
-                # print(f'Generator iteration: {g_iter}/{self.generator_iters}, g_loss: {g_loss}')
                 # Saving model and sampling images every 1000th generator iterations
-                # TODO - extract logging and saving part of both DCGAN and WGANGP to one function
                 if iters_counter % SAVE_PER_TIMES == 0 or \
                         ((epoch == self.hparams['epochs'] - 1) and (g_iter == len(self.dataloader) - 1)):
                     # Testing
                     time = t.time() - self.t_begin
                     print("Generator iter: {}".format(iters_counter))
                     print("Time {}".format(time))
-                    self.save_model(iters_counter)
 
-                    if self.two_dim_img:
-                        self.save_2D_grid(filename=f"img_generator_iter_{str(iters_counter).zfill(3)}")
-                    else:
-                        self.save_slices_grid(filename=f"img_generator_iter_{str(iters_counter).zfill(3)}")
+                    self.save_model(iters=iters_counter)
+
+                    self.save_grid(iters=iters_counter)
 
                     # ============ TensorBoard logging ============#
                     # (1) Log the scalar values
@@ -194,28 +143,16 @@ class WGAN_GP(GAN_Model):
                     for tag, value in info.items():
                         self.logger.scalar_summary(tag, value.cpu(), iters_counter + 1)
 
-                    # # (2) Log the images
-                    # if self.two_dim_img:
-                    #     info = {
-                    #         'real_images': self.log_real_images(real_images),
-                    #         'generated_images': self.log_generated_images()
-                    #     }
-                    #
-                    #     for tag, images in info.items():
-                    #         self.logger.image_summary(tag, images, iters_counter + 1)
+                    # (2) Log images
+                    self.log_images(real_images=real_images, iters=iters_counter)
 
                     # (3) Log inception score
                     if self.has_inception_model:
                         self.log_inception_score(iter=iters_counter)
 
-                    # (4) Log fid value
+                    # (4) Log FID score
                     if self.calc_fid:
-                        self.save_fid_images(real=False)
-                        fid_score = self.fid_calculator()
-                        print(f"FID score: {fid_score}")
-                        info = {'train/FID score': fid_score}
-                        for tag, value in info.items():
-                            self.logger.scalar_summary(tag, value, iters_counter + 1)
+                        self.log_fid_score(iters=iters_counter)
 
                 iters_counter += 1
 

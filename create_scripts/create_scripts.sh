@@ -3,40 +3,25 @@ mkdir scripts
 
 -----------
 
-
-# mnist dcgan 1d
+# mnist wgangp drop independent
 #python ./create_scripts/create_scripts.py \
 #    --base-script-path ./create_scripts/mnist/base_script.sh \
 #    --scripts-base-dir ./scripts/ \
-#    --grid-path ./create_scripts/mnist/grid_dcgan_1d.sh
-
-# mnist wgangp drop independent
-python ./create_scripts/create_scripts.py \
-    --base-script-path ./create_scripts/mnist/base_script.sh \
-    --scripts-base-dir ./scripts/ \
-    --grid-path ./create_scripts/mnist/grid_wgangp_drop_independent.sh
+#    --grid-path ./create_scripts/mnist/grid_wgangp_drop_independent.sh
 
 # mnist wgangp blur + noise
-python ./create_scripts/create_scripts.py \
-    --base-script-path ./create_scripts/mnist/base_script.sh \
-    --scripts-base-dir ./scripts/ \
-    --grid-path ./create_scripts/mnist/grid_wgangp_blur_addnoise.sh
+#python ./create_scripts/create_scripts.py \
+#    --base-script-path ./create_scripts/mnist/base_script.sh \
+#    --scripts-base-dir ./scripts/ \
+#    --grid-path ./create_scripts/mnist/grid_wgangp_blur_addnoise.sh
 
 # mnist wgangp patches
-python ./create_scripts/create_scripts.py \
-    --base-script-path ./create_scripts/mnist/base_script.sh \
-    --scripts-base-dir ./scripts/ \
-    --grid-path ./create_scripts/mnist/grid_wgangp_patches.sh
-
+#python ./create_scripts/create_scripts.py \
+#    --base-script-path ./create_scripts/mnist/base_script.sh \
+#    --scripts-base-dir ./scripts/ \
+#    --grid-path ./create_scripts/mnist/grid_wgangp_patches.sh
 
 # -----------
-
-
-# celebA dcgan 1d
-#python ./create_scripts/create_scripts.py \
-#    --base-script-path ./create_scripts/celebA/base_script.sh \
-#    --scripts-base-dir ./scripts/ \
-#    --grid-path ./create_scripts/celebA/grid_dcgan_1d.sh
 
 # celebA dcgan drop_independent
 python ./create_scripts/create_scripts.py \
@@ -59,15 +44,11 @@ python ./create_scripts/create_scripts.py \
 
 # -----------
 
-
-# cifar10 acwgangp drop independent
+# QSM_cosmos wgangp drop_independent
 #python ./create_scripts/create_scripts.py \
-#    --base-script-path ./create_scripts/cifar10/base_script.sh \
+#    --base-script-path ./create_scripts/QSM_cosmos/base_script.sh \
 #    --scripts-base-dir ./scripts/ \
-#    --grid-path ./create_scripts/cifar10/grid_acwgangp_drop_independent.sh
-
-
-# -----------
+#    --grid-path ./create_scripts/QSM_cosmos/grid_wgangp_drop_independent.sh
 
 
 # Make sure everything in scripts is executable

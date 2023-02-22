@@ -4,39 +4,18 @@
 
 from __future__ import division
 
-import torch
-import matplotlib.pyplot as plt
-from torchvision import datasets, transforms
-from torch.utils.tensorboard import SummaryWriter
 import math
-import itertools
-import imageio
-import natsort
-from glob import glob
-import torch.utils.data as data_utils
-import tensorflow as tf
-import numpy as np
-import os
 
 import numpy as np
-import scipy.misc
 import torch
-import torch.nn as nn
-import torch.optim as optim
-
-import torch
+import torch.utils.data
+from mnist.inception.model import ResNet18
+from scipy.stats import entropy
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import functional as F
-import torch.utils.data
+from torchvision import transforms
 from torchvision.models.inception import inception_v3
-import numpy as np
-from scipy.stats import entropy
-
-from mnist.inception.model import ResNet18
-
-from commons import basic_utils
-from commons import dir_def
 
 
 def preds2score(preds, splits=10):

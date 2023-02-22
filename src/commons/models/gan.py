@@ -10,6 +10,7 @@ import numpy as np
 import os
 import nibabel as nib
 from torchvision import utils
+from torch.utils.data import DataLoader
 
 from commons import measure
 from QSM.gen import utils as QSM_utils
@@ -27,17 +28,13 @@ def normalize_image(img):
 
 
 class GAN_Model(ABC):
-    def __init__(self, generator, discriminator, dataset, hparams, clean_data=True):
-        if hparams['dataset'] == 'QSM_phase':
-            batch_sampler = QSM_utils.QSMBatchSampler(dataset, batch_size=hparams['batch_size'])
-            self.dataloader = torch.utils.data.DataLoader(dataset, num_workers=0, batch_sampler=batch_sampler)
-        else:
-            self.dataloader = torch.utils.data.DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True,
-                                                          num_workers=0, drop_last=True)
+    def __init__(self, generator, discriminator, dataset, hparams):
+        self.dataloader = DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True, num_workers=0,
+                                     drop_last=True)
         print("initialize GAN model")
         self.G = generator
         self.D = discriminator
-        self.C = hparams['c_dim']
+        self.channels = hparams['c_dim']
 
         # Check if cuda is available
         self.cuda = False
@@ -46,7 +43,6 @@ class GAN_Model(ABC):
 
         self.mdevice = measure.get_mdevice(hparams)
         self.hparams = hparams
-        self.clean_data = clean_data
 
         self.batch_size = hparams['batch_size']
 
@@ -59,16 +55,13 @@ class GAN_Model(ABC):
         self.n_images_to_log = 10
         self.two_dim_img = True if len(self.hparams['image_dims']) == 3 else False
 
-        # self.generator_iters = hparams['max_train_iter']
+        self.use_one_ckpt = self.hparams['use_one_ckpt']
 
         self.inception_path = f"src/{self.hparams['dataset']}/inception/checkpoints/mnist_model_10.ckpt"
         self.has_inception_model = os.path.isfile(self.inception_path)
 
-        # self.calc_fid = self.hparams['dataset'] == 'QSM' # TODO - generalize to the 2D case
-        self.calc_fid = True
-        if self.calc_fid:
-            self.fid_path = self.path_for_fid()
-            self.save_fid_images(real=True)
+        self.fid_path = self.path_for_fid()
+        self.save_fid_images(real=True)
 
     @abstractmethod
     def get_G_optimizer(self):
@@ -109,10 +102,12 @@ class GAN_Model(ABC):
 
     def log_real_images(self, images):
         if self.two_dim_img:
-            if self.C == 3:
-                return to_np(images.view(-1, self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
-            else:
+            if self.channels == 3:
+                return to_np(images.view(-1, self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+            elif self.channels == 1:
                 return to_np(images.view(-1, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+            else:
+                raise NotImplementedError
         else:
             return self.log_slices(images=images)
 
@@ -121,14 +116,15 @@ class GAN_Model(ABC):
             samples = self.generate_images(n_images=self.n_images_to_log)
             generated_images = []
             for sample in samples:
-                if self.C == 3:
-                    generated_images.append(sample.reshape(self.C, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
-                else:
+                if self.channels == 3:
+                    generated_images.append(sample.reshape(self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+                elif self.channels == 1:
                     generated_images.append(sample.reshape(self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+                else:
+                    raise NotImplementedError
             return np.array(generated_images)
         else:
             return self.log_slices(images=None)
-
 
     def log_slices(self, images=None):
         n_images = self.n_images_to_log // 3
@@ -139,82 +135,94 @@ class GAN_Model(ABC):
         normalized = 2 * normalized - 1
         return to_np(normalized)
 
-
     def log_inception_score(self, iter):
         sampled_images = self.generate_images(n_images=800)
-
         print("Calculating Inception Score over 8k generated images")
-
-        if self.C == 1:
+        if self.channels == 1:
             inception_score = get_inception_score_grayscale(self.inception_path, sampled_images, batch_size=32, splits=10)
-        elif self.C == 3:
+        elif self.channels == 3:
             inception_score = get_inception_score_rgb(sampled_images, cuda=True, batch_size=32, resize=True, splits=10)
         else:
             raise NotImplementedError
 
-        print("Real Inception score: {}".format(inception_score))
-        with open(self.hparams['incpt_pkl'], 'wb') as pickle_file:
-            pickle.dump({'inception_score_mean': inception_score[0]}, pickle_file)
-
         # Log the inception score
+        print("Inception score: {}".format(inception_score[0]))
         info = {'inception score': inception_score[0]}
         for tag, value in info.items():
-            self.logger.scalar_summary(tag, value, iter + 1)
+            self.logger.scalar_summary(tag, value, iter)
 
     def save_model(self, iters):
-        G_state = {'state_dict': self.G.state_dict(), 'optimizer': self.G_optimizer.state_dict()}
-        D_state = {'state_dict': self.D.state_dict(), 'optimizer': self.D_optimizer.state_dict()}
+        G_state = {'state_dict': self.G.state_dict(), 'optimizer': self.G_optimizer.state_dict(), 'iters': iters}
+        D_state = {'state_dict': self.D.state_dict(), 'optimizer': self.D_optimizer.state_dict(), 'iters': iters}
 
-        G_dir = os.path.join(self.hparams['ckpt_dir'], 'generator')
-        if not os.path.isdir(G_dir):
-            os.makedirs(G_dir)
+        G_dir = self.hparams['ckpt_dir']
+        if not self.use_one_ckpt:
+            G_dir = os.path.join(G_dir, 'generator')
+        os.makedirs(G_dir, exist_ok=True)
 
-        D_dir = os.path.join(self.hparams['ckpt_dir'], 'discriminator')
-        if not os.path.isdir(D_dir):
-            os.makedirs(D_dir)
+        D_dir = self.hparams['ckpt_dir']
+        if not self.use_one_ckpt:
+            D_dir = os.path.join(D_dir, 'discriminator')
+        os.makedirs(D_dir, exist_ok=True)
 
-        G_path = os.path.join(G_dir, f"generator_iter_{str(iters).zfill(3)}.pkl")
-        D_path = os.path.join(D_dir, f"discriminator_iter_{str(iters).zfill(3)}.pkl")
+        if self.use_one_ckpt:
+            G_path = os.path.join(G_dir, f"generator.pkl")
+            D_path = os.path.join(G_dir, f"discriminator.pkl")
+        else:
+            G_path = os.path.join(G_dir, f"generator_iter_{str(iters).zfill(3)}.pkl")
+            D_path = os.path.join(D_dir, f"discriminator_iter_{str(iters).zfill(3)}.pkl")
+
         torch.save(G_state, G_path)
         torch.save(D_state, D_path)
         print(f"Models were saved to {G_path} & {D_path}")
 
     def load_model(self, n_iters=-1):
-        G_dir = os.path.join(self.hparams['ckpt_dir'], 'generator')
-        if not os.path.isdir(G_dir):
-            os.makedirs(G_dir)
-        G_models = os.listdir(G_dir)
+        if not self.hparams['use_saved_model']:
+            return 0, 0
 
-        D_dir = os.path.join(self.hparams['ckpt_dir'], 'discriminator')
-        if not os.path.isdir(D_dir):
-            os.makedirs(D_dir)
-        D_models = os.listdir(D_dir)
+        G_path = os.path.join(self.hparams['ckpt_dir'], 'generator.pkl')
+        D_path = os.path.join(self.hparams['ckpt_dir'], 'discriminator.pkl')
 
-        if len(G_models) and len(D_models):
-            G_all_models = sorted(G_models, key=lambda x: int(x.split('.')[0].split('_')[-1]))
-            D_all_models = sorted(D_models, key=lambda x: int(x.split('.')[0].split('_')[-1]))
+        iters_counter, start_epoch = 0, 0
 
-            G_model = G_all_models[-1] if n_iters == -1 else f"generator_iter_{str(n_iters).zfill(3)}.pkl"
-            D_model = D_all_models[-1] if n_iters == -1 else f"discriminator_iter_{str(n_iters).zfill(3)}.pkl"
+        if not self.use_one_ckpt:
+            G_dir = os.path.join(self.hparams['ckpt_dir'], 'generator')
+            G_models = os.listdir(G_dir)
 
-            G_path = os.path.join(G_dir, G_model)
-            G_state = torch.load(G_path)
-            self.G.load_state_dict(G_state['state_dict'])
-            self.G_optimizer.load_state_dict(G_state['optimizer'])
+            D_dir = os.path.join(self.hparams['ckpt_dir'], 'discriminator')
+            D_models = os.listdir(D_dir)
 
-            D_path = os.path.join(D_dir, D_model)
-            D_state = torch.load(D_path)
-            self.D.load_state_dict(D_state['state_dict'])
-            self.D_optimizer.load_state_dict(D_state['optimizer'])
+            if len(G_models) and len(D_models):
+                G_all_models = sorted(G_models, key=lambda x: int(x.split('.')[0].split('_')[-1]))
+                G_model = G_all_models[-1] if n_iters == -1 else f"generator_iter_{str(n_iters).zfill(3)}.pkl"
+                G_path = os.path.join(G_dir, G_model)
 
-            iters_counter = int(G_model.split('.')[0].split('_')[-1])
+                D_all_models = sorted(D_models, key=lambda x: int(x.split('.')[0].split('_')[-1]))
+                D_model = D_all_models[-1] if n_iters == -1 else f"discriminator_iter_{str(n_iters).zfill(3)}.pkl"
+                D_path = os.path.join(D_dir, D_model)
+
+                iters_counter = int(G_model.split('.')[0].split('_')[-1])
+                start_epoch = iters_counter // len(self.dataloader)
+
+        if not os.path.isfile(G_path) or not os.path.isfile(D_path):
+            print('No model to load')
+            return start_epoch, iters_counter
+
+        G_state = torch.load(G_path)
+        self.G.load_state_dict(G_state['state_dict'])
+        self.G_optimizer.load_state_dict(G_state['optimizer'])
+
+        D_state = torch.load(D_path)
+        self.D.load_state_dict(D_state['state_dict'])
+        self.D_optimizer.load_state_dict(D_state['optimizer'])
+
+        if 'iters' in G_state.keys():
+            iters_counter = G_state['iters']
             start_epoch = iters_counter // len(self.dataloader)
-            print('Generator model loaded from {}'.format(G_path))
-            print('Discriminator model loaded from {}'.format(D_path))
-        else:
-            iters_counter = 0
-            start_epoch = 0
-            print('no model to load')
+
+        print('Generator model loaded from {}'.format(G_path))
+        print('Discriminator model loaded from {}'.format(D_path))
+
         return start_epoch, iters_counter
 
     def measure_images(self, images, labels=None):
@@ -238,17 +246,15 @@ class GAN_Model(ABC):
         grid = utils.make_grid(samples)
         utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
 
-    def save_3D_image(self, image, filename):
-        nib.Nifti1Image(image.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(
-            os.path.join(self.hparams['sample_dir'], f"{filename}.nii.gz"))
-
+    def save_3D_image(self, image, path):
+        nib.Nifti1Image(image.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(path)
 
     def save_slices_grid(self, filename, n_images=8, save_3d=False, fid=False):
         self.G.eval()
         fake_images = self.generate_images(n_images=n_images) if not fid else self.save_fid_images(real=False, n_images=n_images)
         if save_3d:
             for i in range(n_images):
-                self.save_3D_image(image=fake_images[i], filename=str(i).zfill(3))
+                self.save_3D_image(image=fake_images[i], path=os.path.join(self.hparams['sample_dir'], f"{str(i).zfill(3)}.nii.gz"))
         slice_num = np.random.choice(fake_images.shape[-1])
         img_fake = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice_num],
                                               fake_images[:, :, :, slice_num, :],
@@ -268,27 +274,26 @@ class GAN_Model(ABC):
                                                 f"real_measurements.png"))
         else:
             real_dir = os.path.join(self.hparams['sample_dir'], 'real_measurements')
-            if not os.path.isdir(real_dir):
-                os.makedirs(real_dir)
+            os.makedirs(real_dir, exist_ok=True)
+
+            # save 2D slices
             slice = np.random.choice(real_measurements.shape[-1])
-            img_fake = utils.make_grid(torch.cat((real_measurements[:, :, :, :, slice],
+            grid = utils.make_grid(torch.cat((real_measurements[:, :, :, :, slice],
                                                   real_measurements[:, :, :, slice, :],
                                                   real_measurements[:, :, slice, :, :])),
-                                       nrow=real_measurements.shape[-1], padding=2, normalize=True, scale_each=True)
-            utils.save_image(img_fake, real_dir)
+                                       nrow=16, padding=2, normalize=True, scale_each=True)
+            utils.save_image(grid, os.path.join(real_dir, 'real_measurements_slices.png'))
+
+            # save 3D images
             for i, measurement in enumerate(real_measurements):
-                self.save_3D_image(image=measurement, filename=os.path.join(real_dir, f"real_measurements_{str(i).zfill(3)}"))
+                self.save_3D_image(image=measurement, path=os.path.join(real_dir, f"real_measurements_{str(i).zfill(3)}.nii.gz"))
 
     def path_for_fid(self):
-        # path = f"src/fid/{self.hparams['dataset']}"
-        path = f"src/fid{self.hparams['dataset']}" if 'src' not in os.getcwd() else f"fid/{self.hparams['dataset']}"
-        # TODO - the line above is only for the weird case of running from 2 different base dirs. Don't commit it.
-        if not os.path.isdir(path):
-            os.makedirs(path)
-        if not os.path.isdir(os.path.join(path, 'real')):
-            os.makedirs(os.path.join(path, 'real'))
-        if not os.path.isdir(os.path.join(path, 'fake')):
-            os.makedirs(os.path.join(path, 'fake'))
+        path = f"src/fid/{self.hparams['dataset']}"
+        print(path)
+        os.makedirs(path, exist_ok=True)
+        os.makedirs(os.path.join(path, 'real'), exist_ok=True)
+        os.makedirs(os.path.join(path, 'fake'), exist_ok=True)
         return path
 
     def save_fid_images(self, real=False, n_images=64):
@@ -296,10 +301,7 @@ class GAN_Model(ABC):
         path = os.path.join(self.fid_path, 'real' if real else 'fake')
         if real and len(os.listdir(path)):
             return
-        if real and not self.clean_data:
-            print("No clean data for QSM Phase data. Can't save real images for FID score calculation.")
-            return
-        # TODO - how many real images do I need to save?
+
         images = next(iter(self.dataloader))[0] if real else self.generate_images(n_images=n_images)
         if self.two_dim_img:
             [utils.save_image(normalize_image(images[i]), f"{path}/{i}.png") for i in range(len(images))]
@@ -317,3 +319,29 @@ class GAN_Model(ABC):
             paths=[os.path.join(self.fid_path, 'real'), os.path.join(self.fid_path, 'fake')],
             batch_size=self.batch_size, device='cuda' if self.cuda else 'cpu', dims=2048)
         return fid_score
+
+    def save_grid(self, iters):
+        if self.two_dim_img:
+            self.save_2D_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
+        else:
+            self.save_slices_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
+
+    def log_images(self, real_images, iters):
+        if self.two_dim_img:
+            self.G.eval()
+            info = {
+                'real_images': self.log_real_images(real_images),
+                'generated_images': self.log_generated_images()
+            }
+            self.G.train()
+
+            for tag, images in info.items():
+                self.logger.image_summary(tag, images, iters)
+
+    def log_fid_score(self, iters):
+        self.save_fid_images(real=False)
+        fid_score = self.fid_calculator()
+        print(f"FID score: {fid_score}")
+        info = {'train/FID score': fid_score}
+        for tag, value in info.items():
+            self.logger.scalar_summary(tag, value, iters)

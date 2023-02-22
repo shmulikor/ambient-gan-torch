@@ -49,7 +49,6 @@ class CelebAdataset(object):
         # Get the data file names
         self.datafiles = glob.glob('./data/celebA/*.jpg')
         self.total = len(self.datafiles)
-        print('Length of data = {}\n'.format(self.total))
 
         # Set the pointer to initial location
         self.pos = 0
@@ -62,7 +61,6 @@ class CelebAdataset(object):
         self.is_crop = True
 
         self.batch_size = hparams['batch_size']
-        self.model_class = hparams['model_class']
         self.metadata = None
 
     def __len__(self):
