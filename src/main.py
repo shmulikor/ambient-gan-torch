@@ -35,8 +35,6 @@ def main(hparams):
     basic_utils.print_hparams(hparams)
     basic_utils.save_hparams(hparams)
 
-    # print(torch.cuda.is_available())
-    
     # print device
     print("Using", torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
