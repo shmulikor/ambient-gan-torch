@@ -30,7 +30,7 @@ def normalize_image(img):
 
 
 class GAN_Model(ABC):
-    def __init__(self, generator, discriminator, dataset, hparams):
+    def __init__(self, generator, discriminator, dataset, hparams, cuda_index=0):
         # print(len(dataset))
         self.dataloader = DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True, num_workers=0,
                                      drop_last=True)
@@ -41,7 +41,7 @@ class GAN_Model(ABC):
 
         # Check if cuda is available
         self.cuda = False
-        self.cuda_index = 0
+        self.cuda_index = cuda_index
         self.check_cuda(torch.cuda.is_available())
 
         self.mdevice = measure.get_mdevice(hparams)

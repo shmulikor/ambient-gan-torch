@@ -21,7 +21,8 @@ from commons.arch import Generator64_3D, Discriminator64_3D_DCGAN, Discriminator
 from mnist.gen import utils as mnist_utils
 from QSM.gen import utils as QSM_utils
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+# TODO - this is not supposed to be commited
+# os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
 
 def main(hparams):
@@ -75,10 +76,11 @@ def main(hparams):
     print(f"dataset is {hparams['dataset']}, its length is {len(dataset)}")
 
     # define model
+    cuda_index = 0
     if hparams['model_type'] == 'dcgan':
-        model = DCGAN(generator, discriminator, dataset, hparams)
+        model = DCGAN(generator, discriminator, dataset, hparams, cuda_index)
     elif hparams['model_type'] == 'wgangp':
-        model = WGAN_GP(generator, discriminator, dataset, hparams)
+        model = WGAN_GP(generator, discriminator, dataset, hparams, cuda_index)
     else:
         raise NotImplementedError
 

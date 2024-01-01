@@ -7,8 +7,8 @@ from commons.models.gan import GAN_Model, SAVE_PER_TIMES
 
 
 class DCGAN(GAN_Model):
-    def __init__(self, generator, discriminator, dataset, hparams):
-        super().__init__(generator, discriminator, dataset, hparams)
+    def __init__(self, generator, discriminator, dataset, hparams, cuda_index=0):
+        super().__init__(generator, discriminator, dataset, hparams, cuda_index)
 
         print("initialize DCGAN model")
 

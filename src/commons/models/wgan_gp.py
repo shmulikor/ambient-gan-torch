@@ -12,8 +12,8 @@ from commons.models.gan import GAN_Model, SAVE_PER_TIMES
 
 
 class WGAN_GP(GAN_Model):
-    def __init__(self, generator, discriminator, data_iterator, hparams):
-        super().__init__(generator, discriminator, data_iterator, hparams)
+    def __init__(self, generator, discriminator, data_iterator, hparams, cuda_index=0):
+        super().__init__(generator, discriminator, data_iterator, hparams, cuda_index)
         print("initialize WGAN_GradientPenalty model")
 
         # # Values for reference
