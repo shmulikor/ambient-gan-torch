@@ -69,9 +69,9 @@ class DropDevice(MeasurementDevice):
 
     def measure(self, hparams, x, theta):
         if hparams['dataset'] == 'mnist' or hparams['dataset'] == 'celebA':
-            x_measured = torch.multiply(theta, x.mul(0.5).add(0.5)).mul(2).add(-1) # only for mnist and celebA
+            x_measured = torch.mul(theta, x.mul(0.5).add(0.5)).mul(2).add(-1) # only for mnist and celebA
         else:
-            x_measured = torch.multiply(theta, x) # for the 3D case
+            x_measured = torch.mul(theta, x) # for the 3D case
         return x_measured
 
 

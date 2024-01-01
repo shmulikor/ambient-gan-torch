@@ -18,6 +18,8 @@ from commons.inception import get_inception_score_rgb, get_inception_score_grays
 from commons.logger import Logger
 from abc import ABC, abstractmethod
 
+SAVE_PER_TIMES = 100
+
 
 # TODO - consider moving those static functions to utils
 def to_np(x):
@@ -29,6 +31,7 @@ def normalize_image(img):
 
 class GAN_Model(ABC):
     def __init__(self, generator, discriminator, dataset, hparams):
+        # print(len(dataset))
         self.dataloader = DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True, num_workers=0,
                                      drop_last=True)
         print("initialize GAN model")
@@ -60,6 +63,7 @@ class GAN_Model(ABC):
         self.inception_path = f"src/{self.hparams['dataset']}/inception/checkpoints/mnist_model_10.ckpt"
         self.has_inception_model = os.path.isfile(self.inception_path)
 
+        self.calc_fid = True
         self.fid_path = self.path_for_fid()
         self.save_fid_images(real=True)
 
@@ -91,7 +95,8 @@ class GAN_Model(ABC):
     def evaluate(self, n_iters=-1, filename='model_grid', n_images=64):
         self.load_model(n_iters=n_iters)
         if self.two_dim_img:
-            self.save_2D_grid(filename=filename, n_images=n_images)
+            fake_images = self.generate_images(n_images=n_images)
+            self.save_2D_grid(filename=filename, images=fake_images)
             print(f"Grid of images was saved as {os.path.join(self.hparams['sample_dir'], filename)}.png")
         else:
             fid_score = self.save_slices_grid(filename=filename, n_images=n_images, save_3d=True, fid=True)
@@ -99,41 +104,40 @@ class GAN_Model(ABC):
             print(f"{n_images} 3D images were saved to {self.hparams['sample_dir']}")
             print(f"The FID score is {fid_score}")
 
+    # def get_images_for_logger(self, images):
+    #     if self.two_dim_img:
+    #         if self.channels == 3:
+    #             return to_np(images.view(-1, self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+    #         elif self.channels == 1:
+    #             return to_np(images.view(-1, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
+    #         else:
+    #             raise NotImplementedError
+    #     else:
+    #         return self.get_slices_for_logger(images=images)
+    
+    # def get_generated_images_for_logger(self):
+    #     if self.two_dim_img:
+    #         samples = self.generate_images(n_images=self.n_images_to_log)
+    #         generated_images = []
+    #         for sample in samples:
+    #             if self.channels == 3:
+    #                 generated_images.append(sample.reshape(self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+    #             elif self.channels == 1:
+    #                 generated_images.append(sample.reshape(self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
+    #             else:
+    #                 raise NotImplementedError
+    #         return np.array(generated_images)
+    #     else:
+    #         return self.get_slices_for_logger(images=None)
 
-    def log_real_images(self, images):
-        if self.two_dim_img:
-            if self.channels == 3:
-                return to_np(images.view(-1, self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
-            elif self.channels == 1:
-                return to_np(images.view(-1, self.hparams['image_dims'][1], self.hparams['image_dims'][2])[:self.n_images_to_log])
-            else:
-                raise NotImplementedError
-        else:
-            return self.log_slices(images=images)
-
-    def log_generated_images(self):
-        if self.two_dim_img:
-            samples = self.generate_images(n_images=self.n_images_to_log)
-            generated_images = []
-            for sample in samples:
-                if self.channels == 3:
-                    generated_images.append(sample.reshape(self.channels, self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
-                elif self.channels == 1:
-                    generated_images.append(sample.reshape(self.hparams['image_dims'][1], self.hparams['image_dims'][2]).data.cpu().numpy())
-                else:
-                    raise NotImplementedError
-            return np.array(generated_images)
-        else:
-            return self.log_slices(images=None)
-
-    def log_slices(self, images=None):
-        n_images = self.n_images_to_log // 3
-        images = self.generate_images(n_images=n_images) if images is None else images[:n_images]
-        slice_num = np.random.choice(images.shape[-1])
-        all_slices = torch.cat((images[:, :, :, :, slice_num], images[:, :, :, slice_num, :], images[:, :, slice_num, :, :]))
-        normalized = torch.stack([normalize_image(slice) for slice in all_slices])
-        normalized = 2 * normalized - 1
-        return to_np(normalized)
+    # def get_slices_for_logger(self, images=None):
+    #     n_images = self.n_images_to_log // 3
+    #     images = self.generate_images(n_images=n_images) if images is None else images[:n_images]
+    #     slice_num = np.random.choice(images.shape[-1])
+    #     all_slices = torch.cat((images[:, :, :, :, slice_num], images[:, :, :, slice_num, :], images[:, :, slice_num, :, :]))
+    #     normalized = torch.stack([normalize_image(slice) for slice in all_slices])
+    #     normalized = 2 * normalized - 1
+    #     return to_np(normalized)
 
     def log_inception_score(self, iter):
         sampled_images = self.generate_images(n_images=800)
@@ -147,7 +151,7 @@ class GAN_Model(ABC):
 
         # Log the inception score
         print("Inception score: {}".format(inception_score[0]))
-        info = {'inception score': inception_score[0]}
+        info = {'score/inception score': inception_score[0]}
         for tag, value in info.items():
             self.logger.scalar_summary(tag, value, iter)
 
@@ -238,32 +242,40 @@ class GAN_Model(ABC):
         images = self.G(z)
         return images
 
-    def save_2D_grid(self, filename, n_images=64):
-        samples = self.generate_images(n_images=n_images)
+    def get_2D_grid(self, images):
+        # samples = self.generate_images(n_images=n_images)
         if self.hparams['dataset'] == 'mnist' or self.hparams['dataset'] == 'celebA':
-            samples = samples.mul(0.5).add(0.5)
-        samples = samples.data.cpu()
-        grid = utils.make_grid(samples)
+            images = images.mul(0.5).add(0.5)
+        images = images.data.cpu()
+        grid = utils.make_grid(images)
+        return grid
+
+    def save_2D_grid(self, filename, images):
+        grid = self.get_2D_grid(images=images)
         utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
 
     def save_3D_image(self, image, path):
         nib.Nifti1Image(image.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(path)
-
-    def save_slices_grid(self, filename, n_images=8, save_3d=False, fid=False):
+    
+    def get_slices_grid(self, images, n_images=8, fid=False):
         self.G.eval()
         fake_images = self.generate_images(n_images=n_images) if not fid else self.save_fid_images(real=False, n_images=n_images)
-        if save_3d:
-            for i in range(n_images):
-                self.save_3D_image(image=fake_images[i], path=os.path.join(self.hparams['sample_dir'], f"{str(i).zfill(3)}.nii.gz"))
-        slice_num = np.random.choice(fake_images.shape[-1])
-        img_fake = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice_num],
-                                              fake_images[:, :, :, slice_num, :],
-                                              fake_images[:, :, slice_num, :, :])),
-                                   nrow=n_images, padding=2, normalize=True, scale_each=True)
-        utils.save_image(img_fake, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
         self.G.train()
-        if fid:
-            return self.fid_calculator()
+        # if save_3d:
+        #     for i in range(n_images):
+        #         self.save_3D_image(image=fake_images[i], path=os.path.join(self.hparams['sample_dir'], f"{str(i).zfill(3)}.nii.gz"))
+        slice_num = np.random.choice(fake_images.shape[-1])
+        slices_grid = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice_num],
+                                                 fake_images[:, :, :, slice_num, :],
+                                                 fake_images[:, :, slice_num, :, :])),
+                                                 nrow=n_images, padding=2, normalize=True, scale_each=True)
+        return slices_grid
+
+    def save_slices_grid(self, filename, n_images=8, save_3d=False, fid=False):
+        slices_grid = self.get_slices_grid()
+        utils.save_image(slices_grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
+        # if fid:
+        #     return self.fid_calculator()
 
     def save_real_measurements(self, real_measurements):
         if self.two_dim_img:
@@ -320,20 +332,30 @@ class GAN_Model(ABC):
             batch_size=self.batch_size, device='cuda' if self.cuda else 'cpu', dims=2048)
         return fid_score
 
-    def save_grid(self, iters):
+    def save_grid(self, images, iters):
+        filename=f"img_generator_iter_{str(iters).zfill(3)}"
         if self.two_dim_img:
-            self.save_2D_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
+            grid = self.get_2D_grid(images=images)
+            # utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
+            # self.save_2D_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
         else:
-            self.save_slices_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
+            grid = self.get_slices_grid(images=images)
+            # self.save_slices_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
+        utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
 
-    def log_images(self, real_images, iters):
+    def log_images(self, real_images, real_measurements, iters):
         if self.two_dim_img:
             self.G.eval()
-            info = {
-                'real_images': self.log_real_images(real_images),
-                'generated_images': self.log_generated_images()
-            }
+            fake_images = self.generate_images(n_images=64)
             self.G.train()
+            
+            info = {'images/generated_images': self.get_2D_grid(images=fake_images)}
+            if iters == SAVE_PER_TIMES:
+                info_real = {
+                    'images/real_images': self.get_2D_grid(images=real_images),
+                    'images/measured_images': self.get_2D_grid(images=real_measurements)
+                }
+                info.update(info_real)
 
             for tag, images in info.items():
                 self.logger.image_summary(tag, images, iters)
@@ -342,6 +364,6 @@ class GAN_Model(ABC):
         self.save_fid_images(real=False)
         fid_score = self.fid_calculator()
         print(f"FID score: {fid_score}")
-        info = {'train/FID score': fid_score}
+        info = {'score/FID score': fid_score}
         for tag, value in info.items():
             self.logger.scalar_summary(tag, value, iters)

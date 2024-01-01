@@ -8,9 +8,7 @@ from torch.autograd import Variable
 
 plt.switch_backend('agg')
 
-from commons.models.gan import GAN_Model
-
-SAVE_PER_TIMES = 100
+from commons.models.gan import GAN_Model, SAVE_PER_TIMES
 
 
 class WGAN_GP(GAN_Model):
@@ -40,12 +38,13 @@ class WGAN_GP(GAN_Model):
         return D_optimizer
 
     def train(self):
+        start_epoch, iters_counter = self.load_model()
+        
         self.t_begin = t.time()
 
         one = self.get_torch_variable(torch.tensor(1, dtype=torch.float))
         mone = one * -1
 
-        start_epoch, iters_counter = self.load_model()
         self.G.train()
 
         for epoch in range(start_epoch, self.hparams['epochs']):
@@ -78,7 +77,7 @@ class WGAN_GP(GAN_Model):
                     d_loss_real = self.D(real_measurements)
                     d_loss_real = d_loss_real.mean()
                     d_loss_real.backward(mone)
-                    D_x = d_loss_real.item()
+                    D_y = d_loss_real.item()
 
                     # Train with fake images
                     fake_images = self.generate_images(n_images=self.batch_size)
@@ -87,7 +86,7 @@ class WGAN_GP(GAN_Model):
                     d_loss_fake = self.D(fake_measurements)
                     d_loss_fake = d_loss_fake.mean()
                     d_loss_fake.backward(one)
-                    D_G_z1 = d_loss_fake.mean().item()
+                    D_f_G_z1 = d_loss_fake.mean().item()
 
                     # Train with gradient penalty
                     gradient_penalty = self.calculate_gradient_penalty(real_measurements.data, fake_measurements.data)
@@ -110,13 +109,13 @@ class WGAN_GP(GAN_Model):
                 g_loss = self.D(fake_measurements)
                 g_loss = g_loss.mean()
                 g_loss.backward(mone)
-                D_G_z2 = g_loss.item()
+                D_f_G_z2 = g_loss.item()
                 self.G_optimizer.step()
 
                 if g_iter % 10 == 0:
-                    print("[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f" %
+                    print("[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(y): %.4f\tD(f(G(z))): %.4f / %.4f" %
                           (epoch, self.hparams['epochs'], g_iter, len(self.dataloader),
-                           d_loss.item(), g_loss.item(), D_x, D_G_z1, D_G_z2))
+                           d_loss.item(), g_loss.item(), D_y, D_f_G_z1, D_f_G_z2))
 
                 # Saving model and sampling images every 1000th generator iterations
                 if iters_counter % SAVE_PER_TIMES == 0 or \
@@ -128,7 +127,8 @@ class WGAN_GP(GAN_Model):
 
                     self.save_model(iters=iters_counter)
 
-                    self.save_grid(iters=iters_counter)
+                    # save grid of generated images
+                    self.save_grid(images=fake_images, iters=iters_counter)
 
                     # ============ TensorBoard logging ============#
                     # (1) Log the scalar values
@@ -144,7 +144,7 @@ class WGAN_GP(GAN_Model):
                         self.logger.scalar_summary(tag, value.cpu(), iters_counter + 1)
 
                     # (2) Log images
-                    self.log_images(real_images=real_images, iters=iters_counter)
+                    self.log_images(real_images=real_images, real_measurements=real_measurements, iters=iters_counter)
 
                     # (3) Log inception score
                     if self.has_inception_model:

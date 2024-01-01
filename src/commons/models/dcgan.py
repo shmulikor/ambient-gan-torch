@@ -3,9 +3,7 @@ import time as t
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from commons.models.gan import GAN_Model
-
-SAVE_PER_TIMES = 100
+from commons.models.gan import GAN_Model, SAVE_PER_TIMES
 
 
 class DCGAN(GAN_Model):
@@ -38,7 +36,6 @@ class DCGAN(GAN_Model):
 
     def train(self):
         # self.calc_fid = self.hparams['measurement_type'] != 'QSM_measurement'
-        self.calc_fid = True
 
         self.t_begin = t.time()
 
@@ -60,18 +57,18 @@ class DCGAN(GAN_Model):
                     self.save_real_measurements(real_measurements)
 
                 # Train discriminator
-                # Compute BCE_Loss using real images
+                # Compute BCE_Loss using real measuremants
                 outputs = self.D(real_measurements)
                 d_loss_real = self.loss(outputs.flatten(), real_labels)
-                D_x = outputs.mean().item()
+                D_y = outputs.mean().item()
 
-                # Compute BCE Loss using fake images
+                # Compute BCE Loss using fake measuremants
                 fake_images = self.generate_images(n_images=self.batch_size)
                 fake_measurements = self.measure_images(fake_images, labels)
 
                 outputs = self.D(fake_measurements)
                 d_loss_fake = self.loss(outputs.flatten(), fake_labels)
-                D_G_z1 = outputs.mean().item()
+                D_f_G_z1 = outputs.mean().item()
 
                 # Optimize discriminator
                 d_loss = d_loss_real + d_loss_fake
@@ -80,13 +77,13 @@ class DCGAN(GAN_Model):
                 self.D_optimizer.step()
 
                 # Train generator
-                # Compute loss with fake images
+                # Compute loss with fake measuremants
                 fake_images = self.generate_images(n_images=self.batch_size)
                 fake_measurements = self.measure_images(fake_images, labels)
 
                 outputs = self.D(fake_measurements)
                 g_loss = self.loss(outputs.flatten(), real_labels)
-                D_G_z2 = outputs.mean().item()
+                D_f_G_z2 = outputs.mean().item()
 
                 # Optimize generator
                 self.D.zero_grad()
@@ -95,9 +92,9 @@ class DCGAN(GAN_Model):
                 self.G_optimizer.step()
 
                 if i % 10 == 0:
-                    print("[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f" %
+                    print("[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(y): %.4f\tD(f(G(z))): %.4f / %.4f" %
                           (epoch, self.hparams['epochs'], i, len(self.dataloader),
-                           d_loss.item(), g_loss.item(), D_x, D_G_z1, D_G_z2))
+                           d_loss.item(), g_loss.item(), D_y, D_f_G_z1, D_f_G_z2))
 
                 if iters_counter % SAVE_PER_TIMES == 0 or \
                         ((epoch == self.hparams['epochs'] - 1) and (i == len(self.dataloader) - 1)):
@@ -107,7 +104,8 @@ class DCGAN(GAN_Model):
 
                     self.save_model(iters=iters_counter)
 
-                    self.save_grid(iters=iters_counter)
+                    # save grid of generated images
+                    self.save_grid(images=fake_images, iters=iters_counter)
 
                     # ============ TensorBoard logging ============#
                     # (1) Log the scalar values
@@ -122,7 +120,7 @@ class DCGAN(GAN_Model):
                         self.logger.scalar_summary(tag, value.cpu(), iters_counter)
 
                     # (2) Log images
-                    self.log_images(real_images=real_images, iters=iters_counter)
+                    self.log_images(real_images=real_images, real_measurements=real_measurements, iters=iters_counter)
 
                     # (3) Log inception score
                     if self.has_inception_model:

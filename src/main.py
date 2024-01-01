@@ -7,6 +7,7 @@ from __future__ import division
 from argparse import ArgumentParser
 
 import torch
+import os
 
 from celebA.gen import utils as celebA_utils
 from commons import basic_utils
@@ -20,6 +21,8 @@ from commons.arch import Generator64_3D, Discriminator64_3D_DCGAN, Discriminator
 from mnist.gen import utils as mnist_utils
 from QSM.gen import utils as QSM_utils
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+
 
 def main(hparams):
 
@@ -31,7 +34,9 @@ def main(hparams):
     basic_utils.print_hparams(hparams)
     basic_utils.save_hparams(hparams)
 
-    # Print device
+    # print(torch.cuda.is_available())
+    
+    # print device
     print("Using", torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
     if hparams['dataset'] == 'mnist':
@@ -53,7 +58,7 @@ def main(hparams):
             discriminator = Discriminator64_WGANGP()
         else:
             raise NotImplementedError
-
+    
     elif hparams['dataset'] == 'QSM_cosmos':
         dataset = QSM_utils.CosmosDataset()
         generator = Generator64_3D()
@@ -66,6 +71,8 @@ def main(hparams):
 
     else:
         raise NotImplementedError
+
+    print(f"dataset is {hparams['dataset']}, its length is {len(dataset)}")
 
     # define model
     if hparams['model_type'] == 'dcgan':

@@ -1,4 +1,4 @@
-from hparams import HParams
+# from hparams import HParams
 import re
 
 def get_hparams(args=None):
@@ -6,37 +6,37 @@ def get_hparams(args=None):
     # Create a HParams object specifying the names and values of the model hyperparameters:
 
     # hparams = tf.contrib.training.HParams(
-    hparams = HParams(
+    hparams = {
         # task
-        dataset='QSM_cosmos',
-        measurement_type='drop_independent',
-        drop_prob=0.5,  # drop probability
-        patch_size=10,  # size of patch to drop
-        blur_radius=1.0,  # Radius for gaussian blurring
-        blur_filter_size=3,  # Size of the blurring filter
-        additive_noise_std=0.5,  # std deviation of noise to add
-        num_angles=1,  # Number of rotate + project measurements
+        'dataset': 'mnist',
+        'measurement_type': 'drop_independent',
+        'drop_prob': 0.5,  # drop probability
+        'patch_size': 10,  # size of patch to drop
+        'blur_radius': 1.0,  # Radius for gaussian blurring
+        'blur_filter_size': 3,  # Size of the blurring filter
+        'additive_noise_std': 0.5,  # std deviation of noise to add
+        'num_angles': 1,  # Number of rotate + project measurements
 
         # model
-        model_type='dcgan',
-        z_dim=100,
-        gp_lambda=10.0,  # gradient penalty lambda
+        'model_type': 'wgangp',
+        'z_dim': 100,
+        'gp_lambda': 10.0,  # gradient penalty lambda
 
         # optimization
-        batch_size=64,  # how many examples are processed together
-        g_lr=0.0002,  # Learning rate for the generator
-        d_lr=0.0002,  # Learning rate for the disciminator
-        opt_param1=0.5,  # parameter1 to optimizer
-        opt_param2=0.999,  # parameter2 to optimizer
+        'batch_size': 64,  # how many examples are processed together
+        'g_lr': 0.0002,  # Learning rate for the generator
+        'd_lr': 0.0002,  # Learning rate for the disciminator
+        'opt_param1': 0.5,  # parameter1 to optimizer
+        'opt_param2': 0.999,  # parameter2 to optimizer
 
         # monitoring, saving, running
-        results_dir='./results/', # Where to store the results
-        use_one_ckpt=True,
-        use_saved_model=True,
+        'results_dir': './results/', # Where to store the results
+        'use_one_ckpt': True,
+        'use_saved_model': True,
 
-        epochs=100,
+        'epochs': 50,
 
-    )
+    }
 
     # Override hyperparameters values by parsing the command line
 
