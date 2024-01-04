@@ -10,16 +10,29 @@ python ./create_scripts/create_scripts.py \
    --grid-path ./create_scripts/mnist/grid_wgangp_drop_independent.sh
 
 # mnist wgangp blur + noise
-#python ./create_scripts/create_scripts.py \
-#    --base-script-path ./create_scripts/mnist/base_script.sh \
-#    --scripts-base-dir ./scripts/ \
-#    --grid-path ./create_scripts/mnist/grid_wgangp_blur_addnoise.sh
+python ./create_scripts/create_scripts.py \
+   --base-script-path ./create_scripts/mnist/base_script.sh \
+   --scripts-base-dir ./scripts/ \
+   --grid-path ./create_scripts/mnist/grid_wgangp_blur_addnoise.sh
 
-# mnist wgangp patches
-#python ./create_scripts/create_scripts.py \
-#    --base-script-path ./create_scripts/mnist/base_script.sh \
-#    --scripts-base-dir ./scripts/ \
-#    --grid-path ./create_scripts/mnist/grid_wgangp_patches.sh
+# mnist wgangp keep patch
+python ./create_scripts/create_scripts.py \
+   --base-script-path ./create_scripts/mnist/base_script.sh \
+   --scripts-base-dir ./scripts/ \
+   --grid-path ./create_scripts/mnist/grid_wgangp_keep_patch.sh
+
+# mnist wgangp extract patch
+python ./create_scripts/create_scripts.py \
+   --base-script-path ./create_scripts/mnist/base_script.sh \
+   --scripts-base-dir ./scripts/ \
+   --grid-path ./create_scripts/mnist/grid_wgangp_extract_patch.sh
+
+# mnist wgangp drop patch
+python ./create_scripts/create_scripts.py \
+   --base-script-path ./create_scripts/mnist/base_script.sh \
+   --scripts-base-dir ./scripts/ \
+   --grid-path ./create_scripts/mnist/grid_wgangp_drop_patch.sh
+
 
 # -----------
 
