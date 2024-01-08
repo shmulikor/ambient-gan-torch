@@ -6,6 +6,12 @@ The training setup is as in the following diagram:
 
 <img src="https://github.com/AshishBora/ambient-gan/blob/master/setup.png" width="350" height="200">
 
+Here are a few example results:
+
+
+<img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_measurements.png" width="200" height="200">
+<img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_model_out.png" width="200" height="200">
+
 ## Requirements ##
 
 For `pip` installation, use `$ pip install -r requirements.txt`
