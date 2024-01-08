@@ -5,3 +5,7 @@ The code in this repository, developed in Python3 and PyTorch, is designed for r
 The training setup is as in the following diagram:
 ![](https://github.com/AshishBora/ambient-gan/blob/master/setup.png)
 
+## Requirements ##
+
+For 'pip' installation, use '$ pip install -r requirements.txt'
+
