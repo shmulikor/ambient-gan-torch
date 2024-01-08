@@ -7,5 +7,5 @@ The training setup is as in the following diagram:
 
 ## Requirements ##
 
-For 'pip' installation, use '$ pip install -r requirements.txt'
+For `pip` installation, use `$ pip install -r requirements.txt`
 
