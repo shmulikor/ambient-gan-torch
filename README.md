@@ -9,8 +9,7 @@ The training setup is as in the following diagram:
 Here are a few example results:
 
 
-<img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_measurements.png" width="200" height="200">
-<img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_model_out.png" width="200" height="200">
+<img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_measurements.png" width="200" height="200"><img src="https://github.com/shmulikor/ambient-gan-torch/blob/master/images/mnist_drop0.9_model_out.png" width="200" height="200">
 
 ## Requirements ##
 
