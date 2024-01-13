@@ -17,7 +17,8 @@ For `pip` installation, use `$ pip install -r requirements.txt`
 
 ## Get the data ##
 
-*currently, this repository works only on MNIST data, which is automatically downloaded*
+- MNIST data is automatically downloaded
+- Get the celebA dataset [here](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) and put the jpeg files in ./data/celebA/
 
 ## Create experiment scripts ##
 
