@@ -18,7 +18,7 @@ from commons.inception import get_inception_score_rgb, get_inception_score_grays
 from commons.logger import Logger
 from abc import ABC, abstractmethod
 
-SAVE_PER_TIMES = 100
+SAVE_PER_TIMES = 1000
 
 
 # TODO - consider moving those static functions to utils
