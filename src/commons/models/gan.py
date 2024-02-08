@@ -257,22 +257,25 @@ class GAN_Model(ABC):
     def save_3D_image(self, image, path):
         nib.Nifti1Image(image.cpu().detach().numpy().squeeze(), np.eye(4)).to_filename(path)
     
-    def get_slices_grid(self, images, n_images=8, fid=False):
-        self.G.eval()
-        fake_images = self.generate_images(n_images=n_images) if not fid else self.save_fid_images(real=False, n_images=n_images)
-        self.G.train()
+    def get_slices_grid(self, images, nrow=8, fid=False):
         # if save_3d:
         #     for i in range(n_images):
         #         self.save_3D_image(image=fake_images[i], path=os.path.join(self.hparams['sample_dir'], f"{str(i).zfill(3)}.nii.gz"))
-        slice_num = np.random.choice(fake_images.shape[-1])
-        slices_grid = utils.make_grid(torch.cat((fake_images[:, :, :, :, slice_num],
-                                                 fake_images[:, :, :, slice_num, :],
-                                                 fake_images[:, :, slice_num, :, :])),
-                                                 nrow=n_images, padding=2, normalize=True, scale_each=True)
+        slice_num = torch.argmax(torch.Tensor([(torch.cat((images[:, :, :, :, i], 
+                                                           images[:, :, :, i, :], 
+                                                           images[:, :, i, :, :])).sum(axis=-1).sum(axis=-1).squeeze() != 0).sum() for i in range(images.shape[-1])]))
+        # slice_num = np.random.choice(images.shape[-1])
+        slices_grid = utils.make_grid(torch.cat((images[:, :, :, :, slice_num],
+                                                 images[:, :, :, slice_num, :],
+                                                 images[:, :, slice_num, :, :])),
+                                                 nrow=nrow, padding=2, normalize=True, scale_each=True)
         return slices_grid
 
-    def save_slices_grid(self, filename, n_images=8, save_3d=False, fid=False):
-        slices_grid = self.get_slices_grid()
+    def save_slices_grid(self, filename, n_images=24, save_3d=False, fid=False):
+        self.G.eval()
+        fake_images = self.generate_images(n_images=n_images)
+        self.G.train()
+        slices_grid = self.get_slices_grid(images=fake_images)
         utils.save_image(slices_grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
         # if fid:
         #     return self.fid_calculator()
@@ -302,7 +305,7 @@ class GAN_Model(ABC):
 
     def path_for_fid(self):
         path = f"src/fid/{self.hparams['dataset']}"
-        print(path)
+        # print(path)
         os.makedirs(path, exist_ok=True)
         os.makedirs(os.path.join(path, 'real'), exist_ok=True)
         os.makedirs(os.path.join(path, 'fake'), exist_ok=True)
@@ -339,26 +342,35 @@ class GAN_Model(ABC):
             # utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
             # self.save_2D_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
         else:
-            grid = self.get_slices_grid(images=images)
+            grid = self.get_slices_grid(images=images[:24])
             # self.save_slices_grid(filename=f"img_generator_iter_{str(iters).zfill(3)}")
         utils.save_image(grid, os.path.join(self.hparams['sample_dir'], f"{filename}.png"))
 
     def log_images(self, real_images, real_measurements, iters):
+        self.G.eval()
+        fake_images = self.generate_images(n_images=64)
+        self.G.train()
         if self.two_dim_img:
-            self.G.eval()
-            fake_images = self.generate_images(n_images=64)
-            self.G.train()
-            
             info = {'images/generated_images': self.get_2D_grid(images=fake_images)}
-            if iters == SAVE_PER_TIMES:
+            if iters == 0: # log them only for the first time
                 info_real = {
                     'images/real_images': self.get_2D_grid(images=real_images),
                     'images/measured_images': self.get_2D_grid(images=real_measurements)
                 }
                 info.update(info_real)
 
-            for tag, images in info.items():
-                self.logger.image_summary(tag, images, iters)
+        else:
+            info = {'images/generated_images': self.get_slices_grid(images=fake_images[:24])}
+            if iters == 0: # log them only for the first time
+                info_real = {
+                    'images/real_images': self.get_slices_grid(images=real_images[:24]),
+                    'images/measured_images': self.get_slices_grid(images=real_measurements[:24])
+                }
+                info.update(info_real)
+        
+        for tag, images in info.items():
+            self.logger.image_summary(tag, images, iters)
+
 
     def log_fid_score(self, iters):
         self.save_fid_images(real=False)

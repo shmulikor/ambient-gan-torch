@@ -16,7 +16,7 @@ def setup_vals(hparams):
     elif hparams['dataset'] == 'celebA':
         hparams['c_dim'] = 3
         hparams['image_dims'] = [3, 64, 64]
-    elif hparams['dataset'] == 'QSM_cosmos':
+    elif hparams['dataset'] == 'QSM':
         hparams['c_dim'] = 64
         hparams['image_dims'] = [1, 64, 64, 64]
     else:

@@ -22,7 +22,7 @@ from mnist.gen import utils as mnist_utils
 from QSM.gen import utils as QSM_utils
 
 # TODO - this is not supposed to be commited
-# os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 
 def main(hparams):
@@ -58,7 +58,7 @@ def main(hparams):
         else:
             raise NotImplementedError
     
-    elif hparams['dataset'] == 'QSM_cosmos':
+    elif hparams['dataset'] == 'QSM':
         dataset = QSM_utils.CosmosDataset()
         generator = Generator64_3D()
         if hparams['model_type'] == 'dcgan':
